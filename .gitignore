@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# API Keys and Secrets
+src/openai-key.local.txt
+src/firebase-config.local.json
+*.api-key
+*.secret
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build outputs
+dist/
+build/
+
+# Package manager lock files (keep package.json, ignore lock files for flexibility)
+package-lock.json
+yarn.lock 

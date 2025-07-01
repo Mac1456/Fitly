@@ -1,0 +1,36 @@
+{
+  "name": "fitly",
+  "version": "1.0.0",
+  "description": "A desktop wellness companion for flexible fitness and nutrition tracking",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mac1456/Fitly.git"
+  },
+  "keywords": [
+    "fitness",
+    "wellness",
+    "nutrition",
+    "electron",
+    "desktop"
+  ],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Mac1456/Fitly/issues"
+  },
+  "homepage": "https://github.com/Mac1456/Fitly#readme",
+  "devDependencies": {
+    "electron": "^32.2.7"
+  },
+  "dependencies": {
+    "dotenv": "^17.0.1",
+    "firebase": "^11.1.0"
+  }
+}
