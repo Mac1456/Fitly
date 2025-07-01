@@ -2,6 +2,8 @@
 // 🔐 SECURE VERSION - Configuration loaded safely via IPC from main process
 
 const { ipcRenderer } = require('electron');
+// Make ipcRenderer available globally for other scripts
+window.ipcRenderer = ipcRenderer;
 
 // Secure Firebase configuration - loaded via IPC from main process
 let firebaseConfig = null;
@@ -336,6 +338,8 @@ window.firebaseStorage = {
 // Initialize Firebase when the script loads
 initializeFirebase().then(configured => {
     console.log('🔐 Secure Firebase configuration loaded. Configured:', configured);
+}).catch(error => {
+    console.error('❌ Firebase initialization failed:', error);
 });
 
 /*

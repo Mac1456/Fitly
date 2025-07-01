@@ -2,14 +2,17 @@
 // This handles the OpenAI API integration for conversational onboarding and meal analysis
 // 🔐 SECURE VERSION - API key stored safely in main process, communication via IPC
 
-const { ipcRenderer } = require('electron');
+// Use ipcRenderer from window (set by firebase-config.js)
 
 // OpenAI API helper functions - all secure via IPC
 window.openaiAPI = {
     // Check if OpenAI is configured (checks main process)
     isConfigured: async () => {
+        if (!window.ipcRenderer) {
+            return false;
+        }
         try {
-            return await ipcRenderer.invoke('openai-is-configured');
+            return await window.ipcRenderer.invoke('openai-is-configured');
         } catch (error) {
             console.error('❌ Error checking OpenAI configuration:', error);
             return false;
@@ -18,9 +21,12 @@ window.openaiAPI = {
     
     // Analyze meal description for nutrition (secure via main process)
     analyzeMeal: async (mealDescription) => {
+        if (!window.ipcRenderer) {
+            return null;
+        }
         try {
             console.log('🤖 Requesting meal analysis via secure IPC...');
-            return await ipcRenderer.invoke('openai-analyze-meal', mealDescription);
+            return await window.ipcRenderer.invoke('openai-analyze-meal', mealDescription);
         } catch (error) {
             console.error('❌ Error analyzing meal via IPC:', error);
             return null;
@@ -29,9 +35,15 @@ window.openaiAPI = {
     
     // Conversational onboarding chat (secure via main process)
     onboardingChat: async (userMessage, conversationHistory = []) => {
+        if (!window.ipcRenderer) {
+            return {
+                message: "I'm having trouble connecting right now. Would you like to try the quick form instead?",
+                error: true
+            };
+        }
         try {
             console.log('🤖 Requesting onboarding chat via secure IPC...');
-            return await ipcRenderer.invoke('openai-onboarding-chat', userMessage, conversationHistory);
+            return await window.ipcRenderer.invoke('openai-onboarding-chat', userMessage, conversationHistory);
         } catch (error) {
             console.error('❌ Error in onboarding chat via IPC:', error);
             return {
@@ -43,9 +55,15 @@ window.openaiAPI = {
 
     // Comprehensive AI assistant chat (secure via main process)
     comprehensiveChat: async (userMessage, conversationHistory = [], userProfile = null, recentData = null) => {
+        if (!window.ipcRenderer) {
+            return {
+                message: "I'm having trouble connecting right now. Please try again in a moment.",
+                error: true
+            };
+        }
         try {
             console.log('🤖 Requesting comprehensive chat via secure IPC...');
-            return await ipcRenderer.invoke('openai-comprehensive-chat', userMessage, conversationHistory, userProfile, recentData);
+            return await window.ipcRenderer.invoke('openai-comprehensive-chat', userMessage, conversationHistory, userProfile, recentData);
         } catch (error) {
             console.error('❌ Error in comprehensive chat via IPC:', error);
             return {
