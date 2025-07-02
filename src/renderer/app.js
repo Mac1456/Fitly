@@ -2,6 +2,22 @@
 console.log('🚀 Fitly app starting...');
 console.log('🔍 Window object available:', typeof window !== 'undefined');
 console.log('🔍 Document object available:', typeof document !== 'undefined');
+console.log('🔍 Script loading timestamp:', new Date().toISOString());
+
+// Add error handler to catch early errors
+window.addEventListener('error', (event) => {
+    console.error('❌ GLOBAL ERROR:', event.error);
+    console.error('❌ ERROR MESSAGE:', event.message);
+    console.error('❌ ERROR FILENAME:', event.filename);
+    console.error('❌ ERROR LINE:', event.lineno);
+});
+
+// Check if required dependencies are available
+console.log('🔍 Checking dependencies:');
+console.log('  - firebase available:', typeof firebase !== 'undefined');
+console.log('  - ipcRenderer available:', typeof window.ipcRenderer !== 'undefined');
+console.log('  - require available:', typeof require !== 'undefined');
+console.log('  - window.require available:', typeof window.require !== 'undefined');
 
 // Application state
 const appState = {
@@ -19,7 +35,9 @@ const appState = {
     isLoading: false,
     onboardingMode: 'form', // 'chat' or 'form' - default to form since AI isn't configured
     conversationHistory: [],
-    chatActive: false
+    chatActive: false,
+    langGraphReady: false, // Track LangGraph readiness
+    currentOnboardingSession: null // Track current onboarding session
 };
 
 console.log('🔍 Initial app state:', appState);
@@ -237,6 +255,7 @@ const utils = {
         if (modal) {
             modal.classList.add('active');
             utils.populateProfileModal();
+            utils.updateStatusIndicators(); // Update all status indicators
             console.log('👤 Profile settings modal opened');
         }
     },
@@ -371,31 +390,168 @@ const utils = {
         }
     },
     
-    testOpenAIConnection: async (buttonElement) => {
-        // Get button element (either passed as parameter or from event)
-        const button = buttonElement || event.target;
-        const originalText = button.textContent;
-        button.textContent = '🔄 Testing...';
-        button.disabled = true;
+    testOpenAIConnection: async () => {
+        console.log('🔍 Testing OpenAI connection...');
+        const apiStatus = document.getElementById('apiStatus');
         
         try {
-            console.log('🔍 Testing OpenAI connection...');
-            // Test with a simple request
-            const response = await window.openaiAPI.analyzeMeal("apple");
-            if (response) {
-                utils.showNotification('OpenAI connection successful!', 'success');
+            if (apiStatus) apiStatus.textContent = 'Testing...';
+            const isConfigured = await window.openaiAPI.isConfigured();
+            
+            if (isConfigured) {
                 console.log('✅ OpenAI connection test passed');
+                if (apiStatus) apiStatus.textContent = '✅ Connected';
+                utils.showNotification('OpenAI connection successful!', 'success');
             } else {
-                utils.showNotification('Connection test inconclusive - no response received', 'warning');
-                console.log('⚠️ OpenAI connection test inconclusive');
+                console.log('❌ OpenAI not configured');
+                if (apiStatus) apiStatus.textContent = '❌ Not configured';
+                utils.showNotification('OpenAI API key not configured', 'error');
             }
         } catch (error) {
             console.error('❌ OpenAI connection test failed:', error);
-            utils.showNotification(`Connection test failed: ${error.message}`, 'error');
+            if (apiStatus) apiStatus.textContent = '❌ Failed';
+            utils.showNotification('OpenAI connection failed', 'error');
+        }
+    },
+    
+    testAIConnection: async () => {
+        console.log('🧪 Testing AI connection...');
+        const aiStatus = document.getElementById('langGraphStatus');
+        
+        try {
+            if (aiStatus) aiStatus.textContent = 'Testing...';
+            
+            if (!appState.langGraphReady || !window.langGraphClient) {
+                console.log('❌ Enhanced AI not available');
+                if (aiStatus) aiStatus.textContent = '⚪ Basic mode';
+                utils.showNotification('Using basic AI mode. All features available.', 'info');
+                return;
+            }
+            
+            // Test AI functionality
+            const testSession = await window.langGraphClient.createSession('coaching', appState.currentUser?.uid);
+            
+            if (testSession) {
+                console.log('✅ AI test session created:', testSession);
+                
+                // Test coaching capabilities
+                const testCoachingResult = await window.langGraphClient.getCoaching(
+                    "How am I doing with my wellness goals?",
+                    appState.userProfile,
+                    {
+                        calories: appState.dailyNutrition?.calories || 0,
+                        todaysMeals: appState.todaysMeals || []
+                    }
+                );
+                
+                if (testCoachingResult && testCoachingResult.motivationalMessage) {
+                    console.log('✅ Enhanced AI coaching test passed');
+                    if (aiStatus) aiStatus.textContent = '🚀 Enhanced AI';
+                    utils.showNotification('Enhanced AI features are working perfectly! 🚀', 'success');
+                    
+                    // Show a sample coaching response
+                    if (window.aiAssistant && window.aiAssistant.addMessage) {
+                        aiAssistant.addMessage("AI Test: " + testCoachingResult.motivationalMessage, 'ai');
+                        utils.switchScreen('aiassistant');
+                    }
+                } else {
+                    throw new Error('AI coaching test failed');
+                }
+            } else {
+                throw new Error('AI session creation failed');
+            }
+        } catch (error) {
+            console.error('❌ AI test failed:', error);
+            if (aiStatus) aiStatus.textContent = '❌ Connection failed';
+            utils.showNotification(`AI connection test failed: ${error.message}`, 'error');
+        }
+    },
+
+    testSpeechRecognition: async () => {
+        console.log('🎤 Testing speech recognition...');
+        const speechStatus = document.getElementById('speechStatus');
+        
+        try {
+            if (speechStatus) speechStatus.textContent = 'Testing...';
+            
+            // Check if speech service is available
+            if (!window.SpeechService || !window.SpeechService.isSupported()) {
+                console.log('❌ Speech recognition not supported');
+                if (speechStatus) speechStatus.textContent = '❌ Not supported';
+                utils.showNotification('Speech recognition is not supported in this browser', 'error');
+                return;
+            }
+            
+            // Check if enhanced AI is available for speech processing
+            if (!appState.langGraphReady || !window.langGraphClient) {
+                console.log('❌ Enhanced AI not available for speech processing');
+                if (speechStatus) speechStatus.textContent = '⚪ Basic mode';
+                utils.showNotification('Speech recognition available in basic mode', 'info');
+                return;
+            }
+            
+            // Test speech recognition
+            const result = await window.langGraphClient.testSpeech();
+            
+            if (result) {
+                console.log('✅ Speech recognition test passed:', result);
+                if (speechStatus) speechStatus.textContent = '🎤 Ready';
+                utils.showNotification('Speech recognition is working! Try the voice log button.', 'success');
+            } else {
+                throw new Error('Speech test failed');
+            }
+        } catch (error) {
+            console.error('❌ Speech recognition test failed:', error);
+            if (speechStatus) speechStatus.textContent = '❌ Failed';
+            utils.showNotification(`Speech test failed: ${error.message}`, 'error');
+        }
+    },
+    
+    updateStatusIndicators: async () => {
+        console.log('🔍 Updating all status indicators...');
+        
+        // Update OpenAI status
+        const apiStatus = document.getElementById('apiStatus');
+        if (apiStatus) {
+            try {
+                const isConfigured = await window.openaiAPI?.isConfigured();
+                if (isConfigured) {
+                    apiStatus.textContent = '✅ Connected';
+                } else {
+                    apiStatus.textContent = '❌ Not configured';
+                }
+            } catch (error) {
+                apiStatus.textContent = '❌ Error';
+            }
         }
         
-        button.textContent = originalText;
-        button.disabled = false;
+        // Update AI status
+        const aiStatus = document.getElementById('langGraphStatus');
+        if (aiStatus) {
+            if (appState.langGraphReady && window.langGraphClient && window.langGraphClient.isReady) {
+                aiStatus.textContent = '🚀 Enhanced AI';
+            } else if (window.langGraphClient) {
+                aiStatus.textContent = '⚪ Loading...';
+            } else {
+                aiStatus.textContent = '⚪ Basic mode';
+            }
+        }
+        
+        // Update Speech status
+        const speechStatus = document.getElementById('speechStatus');
+        if (speechStatus) {
+            if (!window.SpeechService) {
+                speechStatus.textContent = '❌ Not available';
+            } else if (!window.SpeechService.isSupported()) {
+                speechStatus.textContent = '❌ Not supported';
+            } else if (!appState.langGraphReady) {
+                speechStatus.textContent = '⚪ Basic mode';
+            } else {
+                speechStatus.textContent = '🎤 Ready';
+            }
+        }
+        
+        console.log('✅ Status indicators updated');
     },
     
     exportUserData: async () => {
@@ -976,12 +1132,15 @@ const onboarding = {
     initializeChat: async () => {
         console.log('💬 Initializing chat...');
         console.log('🔍 OpenAI API available:', typeof window.openaiAPI !== 'undefined');
+        console.log('🔍 LangGraph ready:', appState.langGraphReady);
         
-        // Check if OpenAI is configured
+        // Check if AI capabilities are available (either LangGraph or OpenAI)
         const isConfigured = await window.openaiAPI?.isConfigured();
+        const hasAICapability = appState.langGraphReady || isConfigured;
         console.log('🔍 OpenAI configured:', isConfigured);
+        console.log('🔍 AI capability available:', hasAICapability);
         
-        if (isConfigured) {
+        if (hasAICapability) {
             // Enable chat interface
             if (elements.chatInput) {
                 elements.chatInput.disabled = false;
@@ -992,11 +1151,11 @@ const onboarding = {
                 console.log('✅ Send chat button enabled');
             }
             
-            // Update status
+            // Update status based on capability type
             if (elements.chatStatus) {
-                elements.chatStatus.className = 'chat-status ready';
-                elements.chatStatus.innerHTML = '<span class="status-indicator">✅</span><span>Ready to chat! Ask me anything.</span>';
-                console.log('✅ Chat status updated to ready');
+                                    elements.chatStatus.className = 'chat-status ready';
+                    elements.chatStatus.innerHTML = '<span class="status-indicator">✅</span><span>Your AI coach is ready! Ask me anything.</span>';
+                    console.log('✅ Chat status updated to ready');
             }
             
             appState.chatActive = true;
@@ -1009,7 +1168,7 @@ const onboarding = {
             }
             
             // Switch to form as default since AI isn't available
-            console.log('🔄 OpenAI not configured, defaulting to form mode');
+            console.log('🔄 AI not available, defaulting to form mode');
             // Don't call switchMode here as it might cause infinite loop
             appState.onboardingMode = 'form';
         }
@@ -1051,13 +1210,69 @@ const onboarding = {
         
         // Show thinking status
         if (elements.chatStatus) {
-            elements.chatStatus.className = 'chat-status thinking';
-            elements.chatStatus.innerHTML = '<span class="status-indicator">🤔</span><span>Coach is thinking...</span>';
+            if (appState.langGraphReady) {
+                elements.chatStatus.className = 'chat-status thinking';
+                elements.chatStatus.innerHTML = '<span class="status-indicator">🤔</span><span>Enhanced Coach is thinking...</span>';
+            } else {
+                elements.chatStatus.className = 'chat-status thinking';
+                elements.chatStatus.innerHTML = '<span class="status-indicator">🤔</span><span>Coach is thinking...</span>';
+            }
         }
         
         try {
-            // Get AI response
-            const response = await window.openaiAPI.onboardingChat(message, appState.conversationHistory);
+            let response;
+            
+            // Use enhanced LangGraph onboarding with proper flow control
+            if (appState.langGraphReady && window.langGraphClient) {
+                console.log('🤖 Using enhanced AI onboarding...');
+                
+                // Create session if needed
+                if (!appState.currentOnboardingSession) {
+                    appState.currentOnboardingSession = await window.langGraphClient.createSession('onboarding', appState.currentUser?.uid);
+                    console.log('🗣️ Created onboarding session:', appState.currentOnboardingSession);
+                }
+                
+                // Track onboarding progress manually to prevent premature completion
+                if (!appState.onboardingProgress) {
+                    appState.onboardingProgress = {
+                        step: 1,
+                        maxSteps: 7,
+                        collectedData: {}
+                    };
+                }
+                
+                // Ensure existing data from previous steps is preserved
+                if (appState.onboardingProgress.collectedData) {
+                    // Merge any existing collected data with current input
+                    const existingData = appState.onboardingProgress.collectedData;
+                    if (Object.keys(existingData).length > 0) {
+                        console.log('📝 Preserving existing onboarding data:', existingData);
+                    }
+                }
+                
+                // Get enhanced response from LangGraph with step tracking
+                response = await window.langGraphClient.onboardingChat(
+                    message, 
+                    appState.currentOnboardingSession,
+                    appState.onboardingProgress
+                );
+                
+                console.log('🤖 Enhanced AI onboarding response:', response);
+                
+                // Update progress based on what information was gathered
+                onboarding.updateOnboardingProgress(message, response);
+                
+                // Ensure weight field consistency for validation
+                if (response.userData && response.userData.weight && !response.userData.currentWeight) {
+                    response.userData.currentWeight = response.userData.weight;
+                    console.log('🔧 Fixed weight field mapping in response:', response.userData.currentWeight);
+                }
+                
+            } else {
+                console.log('🤖 Using fallback conversational onboarding...');
+                // Fallback to intelligent but simpler system
+                response = await onboarding.processConversationalOnboarding(message);
+            }
             
             // Add to conversation history
             appState.conversationHistory.push(
@@ -1068,16 +1283,103 @@ const onboarding = {
             // Add AI message to chat
             onboarding.addMessage(response.message, 'ai');
             
-            // Check if onboarding is complete
-            if (response.complete && response.profileData) {
-                console.log('✅ Onboarding complete via chat:', response.profileData);
-                await onboarding.saveProfileData(response.profileData);
+            // Check if onboarding is complete (with better validation)
+            if (response.complete || response.isComplete) {
+                const profileData = response.profileData || response.userData;
+                console.log('🔍 Onboarding completion check:', { profileData, complete: response.complete, isComplete: response.isComplete });
+                
+                // Map userData fields to expected profile format with robust field handling
+                const mappedProfileData = profileData ? {
+                    userName: profileData.userName || profileData.name,
+                    age: profileData.age,
+                    currentWeight: profileData.currentWeight || profileData.weight,
+                    weightUnit: profileData.weightUnit || 'lbs',
+                    height: profileData.height,
+                    heightUnit: profileData.heightUnit || 'ft',
+                    gender: profileData.gender,
+                    primaryGoal: profileData.primaryGoal,
+                    goalWeight: profileData.goalWeight,
+                    activityLevel: profileData.activityLevel,
+                    workoutFrequency: profileData.workoutFrequency,
+                    dietaryPreferences: profileData.dietaryPreferences || []
+                } : null;
+                
+                // Additional validation to ensure critical fields are present
+                if (mappedProfileData) {
+                    // Double-check weight field mapping with multiple fallbacks
+                    if (!mappedProfileData.currentWeight) {
+                        if (profileData.weight) {
+                            mappedProfileData.currentWeight = profileData.weight;
+                            console.log('🔧 Applied emergency weight fix from .weight:', mappedProfileData.currentWeight);
+                        } else if (response.userData?.weight) {
+                            mappedProfileData.currentWeight = response.userData.weight;
+                            console.log('🔧 Applied emergency weight fix from response.userData.weight:', mappedProfileData.currentWeight);
+                        } else if (response.userData?.currentWeight) {
+                            mappedProfileData.currentWeight = response.userData.currentWeight;
+                            console.log('🔧 Applied emergency weight fix from response.userData.currentWeight:', mappedProfileData.currentWeight);
+                        }
+                    }
+                    
+                    // Validate numeric fields
+                    if (mappedProfileData.currentWeight && typeof mappedProfileData.currentWeight === 'string') {
+                        mappedProfileData.currentWeight = parseFloat(mappedProfileData.currentWeight);
+                    }
+                    if (mappedProfileData.age && typeof mappedProfileData.age === 'string') {
+                        mappedProfileData.age = parseInt(mappedProfileData.age);
+                    }
+                    if (mappedProfileData.height && typeof mappedProfileData.height === 'string') {
+                        mappedProfileData.height = parseFloat(mappedProfileData.height);
+                    }
+                }
+                
+                const requiredFields = ['userName', 'currentWeight', 'height', 'age', 'gender', 'activityLevel', 'primaryGoal'];
+                const hasAllRequired = mappedProfileData && requiredFields.every(field => mappedProfileData[field] !== undefined && mappedProfileData[field] !== null);
+                
+                console.log('🔍 Mapped profile data:', mappedProfileData);
+                console.log('🔍 Required fields check:', requiredFields.map(field => ({ field, value: mappedProfileData?.[field], hasValue: mappedProfileData?.[field] !== undefined })));
+                
+                if (hasAllRequired) {
+                    console.log('✅ Onboarding complete with all required data, saving profile...');
+                    try {
+                        await onboarding.saveProfileData(mappedProfileData);
+                        console.log('✅ Profile saved successfully!');
+                        
+                        // Hide the onboarding chat interface after successful completion
+                        console.log('🔄 Hiding onboarding chat interface...');
+                        onboarding.hideChat();
+                        
+                        // Show completion message briefly before switching
+                        setTimeout(() => {
+                            console.log('🎉 Onboarding fully complete, user should now see main app');
+                            console.log('🔍 Current app state after completion:', {
+                                userProfile: !!appState.userProfile,
+                                currentScreen: appState.currentScreen,
+                                currentUser: !!appState.currentUser
+                            });
+                        }, 2000);
+                        
+                    } catch (error) {
+                        console.error('❌ Error saving profile:', error);
+                    }
+                } else {
+                    console.log('⚠️ Onboarding marked complete but missing required fields, continuing conversation...');
+                    console.log('🔍 Missing fields:', requiredFields.filter(field => !mappedProfileData || mappedProfileData[field] === undefined || mappedProfileData[field] === null));
+                    
+                    // Reset completion flag and continue
+                    response.complete = false;
+                    response.isComplete = false;
+                }
             }
             
             // Reset status
             if (elements.chatStatus) {
-                elements.chatStatus.className = 'chat-status ready';
-                elements.chatStatus.innerHTML = '<span class="status-indicator">✅</span><span>Ready to chat!</span>';
+                if (appState.langGraphReady) {
+                    elements.chatStatus.className = 'chat-status ready';
+                    elements.chatStatus.innerHTML = '<span class="status-indicator">🚀</span><span>Enhanced AI Coach ready!</span>';
+                } else {
+                    elements.chatStatus.className = 'chat-status ready';
+                    elements.chatStatus.innerHTML = '<span class="status-indicator">✅</span><span>Ready to chat!</span>';
+                }
             }
             
         } catch (error) {
@@ -1109,6 +1411,227 @@ const onboarding = {
         elements.chatMessages.appendChild(messageDiv);
         elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
     },
+
+    processConversationalOnboarding: async (message) => {
+        // Initialize conversation data if not exists
+        if (!appState.onboardingData) {
+            appState.onboardingData = {};
+        }
+
+        const userData = appState.onboardingData;
+        const lowerMessage = message.toLowerCase();
+
+        // Extract information from user's message
+        onboarding.extractUserInfo(lowerMessage, userData);
+
+        // Determine what information we still need
+        const missingInfo = onboarding.getMissingInfo(userData);
+        
+        console.log('🔍 Current user data:', userData);
+        console.log('🔍 Missing info:', missingInfo);
+
+        if (missingInfo.length === 0) {
+            // All information collected!
+            const profileData = {
+                userName: userData.name,
+                currentWeight: userData.weight,
+                weightUnit: userData.weightUnit || 'lbs',
+                height: userData.height,
+                heightUnit: userData.heightUnit || 'ft',
+                age: userData.age,
+                gender: userData.gender,
+                goalWeight: userData.goalWeight,
+                activityLevel: userData.activityLevel,
+                primaryGoal: userData.primaryGoal
+            };
+
+            return {
+                message: `Perfect! I have all the information I need. Welcome to Fitly, ${userData.name}! 🎉\n\nYour profile is being set up now. I'm excited to be your wellness companion and help you on your ${userData.primaryGoal} journey!`,
+                complete: true,
+                profileData: profileData
+            };
+        }
+
+        // Generate appropriate response for next needed information
+        let responseMessage;
+        if (!userData.name) {
+            responseMessage = "Great to meet you! What should I call you?";
+        } else if (!userData.age) {
+            responseMessage = `Nice to meet you, ${userData.name}! How old are you?`;
+        } else if (!userData.weight) {
+            responseMessage = "What's your current weight? (You can say something like '150 lbs' or '68 kg')";
+        } else if (!userData.height) {
+            responseMessage = "What's your height? (You can say something like '5 feet 8 inches' or '170 cm')";
+        } else if (!userData.gender) {
+            responseMessage = "Are you male, female, or prefer not to specify?";
+        } else if (!userData.primaryGoal) {
+            responseMessage = "What's your main wellness goal? Are you looking to lose fat, build muscle, maintain your current weight, improve general health, or just track your habits?";
+        } else if (!userData.activityLevel) {
+            responseMessage = "How would you describe your current activity level? Are you mostly sedentary, lightly active, moderately active, very active, or does it vary (inconsistent)?";
+        } else if (!userData.goalWeight && userData.primaryGoal === 'lose fat') {
+            responseMessage = "Do you have a goal weight in mind? (This is optional - you can say 'no goal weight' if you prefer)";
+        } else {
+            // Fallback - shouldn't reach here
+            responseMessage = "Is there anything else you'd like to tell me about your wellness goals?";
+        }
+
+        return {
+            message: responseMessage,
+            complete: false,
+            profileData: null
+        };
+    },
+
+    extractUserInfo: (message, userData) => {
+        // Extract name
+        const nameMatch = message.match(/(?:name is|i'm|i am|call me)\s+([a-zA-Z]+)/i) || 
+                         message.match(/^([a-zA-Z]+)$/);
+        if (nameMatch && !userData.name) {
+            userData.name = nameMatch[1].charAt(0).toUpperCase() + nameMatch[1].slice(1).toLowerCase();
+        }
+
+        // Extract age
+        const ageMatch = message.match(/(\d+)(?:\s+years?\s+old)?/i);
+        if (ageMatch && parseInt(ageMatch[1]) >= 13 && parseInt(ageMatch[1]) <= 120) {
+            userData.age = parseInt(ageMatch[1]);
+        }
+
+        // Extract weight
+        const weightMatch = message.match(/(\d+(?:\.\d+)?)\s*(lbs?|pounds?|kg|kilograms?)/i);
+        if (weightMatch) {
+            userData.weight = parseFloat(weightMatch[1]);
+            userData.weightUnit = weightMatch[2].toLowerCase().includes('kg') ? 'kg' : 'lbs';
+        }
+
+        // Extract height
+        const heightFeetMatch = message.match(/(\d+)\s*(?:feet?|ft|')\s*(?:and\s*)?(\d+)?\s*(?:inches?|in|")?/i);
+        const heightCmMatch = message.match(/(\d+)\s*(cm|centimeters?)/i);
+        
+        if (heightFeetMatch) {
+            const feet = parseInt(heightFeetMatch[1]);
+            const inches = heightFeetMatch[2] ? parseInt(heightFeetMatch[2]) : 0;
+            userData.height = feet + (inches / 12); // Convert to decimal feet
+            userData.heightUnit = 'ft';
+        } else if (heightCmMatch) {
+            userData.height = parseInt(heightCmMatch[1]);
+            userData.heightUnit = 'cm';
+        }
+
+        // Extract gender
+        if (message.includes('male') && !message.includes('female')) userData.gender = 'male';
+        if (message.includes('female')) userData.gender = 'female';
+        if (message.includes('other') || message.includes('non-binary') || message.includes('prefer not')) userData.gender = 'other';
+
+        // Extract primary goal
+        if (message.includes('lose') || message.includes('fat') || message.includes('weight loss')) userData.primaryGoal = 'lose-fat';
+        if (message.includes('muscle') || message.includes('gain') || message.includes('build')) userData.primaryGoal = 'build-muscle';
+        if (message.includes('maintain')) userData.primaryGoal = 'maintain';
+        if (message.includes('health') || message.includes('general') || message.includes('wellness')) userData.primaryGoal = 'general-health';
+        if (message.includes('track') || message.includes('tracking')) userData.primaryGoal = 'just-tracking';
+
+        // Extract activity level
+        if (message.includes('sedentary') || message.includes('desk job') || message.includes('sitting')) userData.activityLevel = 'sedentary';
+        if (message.includes('lightly active') || message.includes('light exercise')) userData.activityLevel = 'lightly-active';
+        if (message.includes('moderately active') || message.includes('moderate exercise')) userData.activityLevel = 'moderately-active';
+        if (message.includes('very active') || message.includes('very')) userData.activityLevel = 'very-active';
+        if (message.includes('inconsistent') || message.includes('varies') || message.includes('sporadic')) userData.activityLevel = 'inconsistent';
+
+        // Extract goal weight
+        if (userData.primaryGoal === 'lose-fat') {
+            const goalWeightMatch = message.match(/(?:goal|target)?\s*(?:weight)?\s*(\d+(?:\.\d+)?)\s*(lbs?|kg)?/i);
+            if (goalWeightMatch) {
+                userData.goalWeight = parseFloat(goalWeightMatch[1]);
+            } else if (message.includes('no goal') || message.includes('no target') || message.includes("don't have")) {
+                userData.goalWeight = null; // Explicitly no goal weight
+            }
+        }
+    },
+
+    getMissingInfo: (userData) => {
+        const required = ['name', 'age', 'weight', 'height', 'gender', 'primaryGoal', 'activityLevel'];
+        const missing = [];
+
+        for (const field of required) {
+            if (!userData[field]) {
+                missing.push(field);
+            }
+        }
+
+        // Special case: goal weight is only required for fat loss goals
+        if (userData.primaryGoal === 'lose-fat' && userData.goalWeight === undefined) {
+            missing.push('goalWeight');
+        }
+
+        return missing;
+    },
+
+    updateOnboardingProgress: (userMessage, aiResponse) => {
+        if (!appState.onboardingProgress) return;
+
+        const progress = appState.onboardingProgress;
+        const userData = progress.collectedData;
+        
+        // Extract information from user's latest message
+        onboarding.extractUserInfo(userMessage.toLowerCase(), userData);
+        
+        // Analyze AI response to understand what step we're on
+        const aiMessage = aiResponse.message || aiResponse.motivationalMessage || '';
+        
+        // Update step based on what information we have and what the AI is asking for
+        const collectedFields = Object.keys(userData).filter(key => userData[key] !== null && userData[key] !== undefined);
+        
+        console.log('🔍 Progress update:');
+        console.log('  - Collected fields:', collectedFields);
+        console.log('  - Current step:', progress.step);
+        console.log('  - User data:', userData);
+        
+        // Determine current step based on collected information
+        if (!userData.name) {
+            progress.step = 1; // Asking for name
+        } else if (!userData.age) {
+            progress.step = 2; // Asking for age
+        } else if (!userData.weight) {
+            progress.step = 3; // Asking for weight
+        } else if (!userData.height) {
+            progress.step = 4; // Asking for height
+        } else if (!userData.gender) {
+            progress.step = 5; // Asking for gender
+        } else if (!userData.primaryGoal) {
+            progress.step = 6; // Asking for goals
+        } else if (!userData.activityLevel) {
+            progress.step = 7; // Asking for activity level
+        } else {
+            progress.step = 8; // Should be complete
+        }
+        
+        // Override completion if we don't have enough data
+        if (progress.step < 8) {
+            if (aiResponse.complete || aiResponse.isComplete) {
+                console.log('⚠️ AI tried to complete early, overriding...');
+                aiResponse.complete = false;
+                aiResponse.isComplete = false;
+            }
+        }
+        
+        // Provide the collected data back to the response for proper tracking
+        if (aiResponse.userData) {
+            aiResponse.userData = { ...aiResponse.userData, ...userData };
+        } else {
+            aiResponse.userData = userData;
+        }
+        
+        // Ensure weight field consistency for downstream validation
+        if (aiResponse.userData.weight && !aiResponse.userData.currentWeight) {
+            aiResponse.userData.currentWeight = aiResponse.userData.weight;
+            console.log('🔧 Fixed currentWeight field in progress update:', aiResponse.userData.currentWeight);
+        }
+        
+        // Update the progress data to persist between steps
+        progress.collectedData = { ...progress.collectedData, ...userData };
+        console.log('💾 Updated progress.collectedData:', progress.collectedData);
+        
+        console.log('✅ Progress updated - Step:', progress.step, '/', progress.maxSteps);
+    },
     
     saveProfileData: async (profileData) => {
         console.log('💾 Saving profile from chat:', profileData);
@@ -1128,20 +1651,107 @@ const onboarding = {
                 await window.firebaseDB.saveUserProfile(appState.currentUser.uid, fullProfileData);
                 appState.userProfile = fullProfileData;
                 
+                console.log('✅ Profile saved successfully, initializing dashboard...');
                 utils.showNotification('Welcome to Fitly! Your profile has been saved.', 'success');
+                
+                // Initialize dashboard and switch to main app
                 await dashboard.initialize();
+                
+                console.log('✅ Profile save and dashboard initialization complete');
             } else {
                 throw new Error('No authenticated user found');
             }
             
-        } catch (error) {
+                } catch (error) {
             console.error('❌ Error saving profile from chat:', error);
-            utils.showNotification('Failed to save profile. Please try the form instead.', 'error');
+            console.error('❌ Profile data that failed to save:', fullProfileData);
+            console.error('❌ Current user:', appState.currentUser);
+            console.error('❌ Firebase DB available:', typeof window.firebaseDB);
+            console.error('❌ Error details:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
+            
+            // More specific error message
+            let errorMsg = 'Failed to save profile.';
+            if (error.message.includes('Firebase')) {
+                errorMsg = 'Firebase connection error. Please check your internet connection.';
+            } else if (error.message.includes('auth')) {
+                errorMsg = 'Authentication error. Please try signing in again.';
+            } else if (!appState.currentUser) {
+                errorMsg = 'No user logged in. Please sign in first.';
+            } else if (!window.firebaseDB) {
+                errorMsg = 'Database not available. Please refresh the page.';
+            }
+            
+            utils.showNotification(`${errorMsg} You can try the form instead.`, 'error');
         } finally {
             utils.showLoading(false);
         }
     },
-    
+
+    hideChat: () => {
+        console.log('🔒 Hiding onboarding chat interface...');
+        
+        // Hide the chat interface elements
+        const chatContainer = document.getElementById('onboardingChat');
+        const chatInput = document.getElementById('onboardingChatInput');
+        const chatSendBtn = document.getElementById('onboardingChatSendBtn');
+        
+        if (chatContainer) {
+            chatContainer.style.display = 'none';
+            console.log('✅ Chat container hidden');
+        }
+        
+        if (chatInput) {
+            chatInput.disabled = true;
+            console.log('✅ Chat input disabled');
+        }
+        
+        if (chatSendBtn) {
+            chatSendBtn.disabled = true;
+            console.log('✅ Chat send button disabled');
+        }
+        
+        // Show a completion message
+        const completionMessage = document.createElement('div');
+        completionMessage.innerHTML = `
+            <div class="completion-message" style="
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 2rem;
+                border-radius: 15px;
+                text-align: center;
+                margin: 2rem 0;
+                box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+            ">
+                <div style="font-size: 3rem; margin-bottom: 1rem;">🎉</div>
+                <h2 style="margin: 0 0 1rem 0; font-size: 1.5rem;">Welcome to Fitly!</h2>
+                <p style="margin: 0; opacity: 0.9;">Your profile is all set up. Redirecting to your dashboard...</p>
+                <div style="margin-top: 1rem;">
+                    <div class="loading-spinner" style="
+                        width: 30px;
+                        height: 30px;
+                        border: 3px solid rgba(255,255,255,0.3);
+                        border-top: 3px solid white;
+                        border-radius: 50%;
+                        animation: spin 1s linear infinite;
+                        margin: 0 auto;
+                    "></div>
+                </div>
+            </div>
+        `;
+        
+        const onboardingContent = document.querySelector('#onboardingScreen .screen-content');
+        if (onboardingContent && chatContainer) {
+            onboardingContent.insertBefore(completionMessage, chatContainer);
+            console.log('✅ Completion message displayed');
+        }
+        
+        console.log('✅ Onboarding chat interface hidden successfully');
+    },
+
     handleSubmit: async (e) => {
         e.preventDefault();
         console.log('📋 Form submitted! Processing onboarding form...');
@@ -1765,16 +2375,64 @@ const meals = {
                 source = 'database';
                 console.log('✅ Nutrition found in database:', finalNutrition);
             } else {
-                // Try AI analysis if OpenAI is configured
+                // Try AI analysis - Enhanced LangGraph first, then basic OpenAI
                 console.log('⚠️ No nutrition data found in database, trying AI...');
                 
-                if (await window.openaiAPI?.isConfigured()) {
+                // Try enhanced LangGraph meal analysis first
+                if (appState.langGraphReady && window.langGraphClient) {
+                    try {
+                        console.log('🚀 Trying enhanced LangGraph meal analysis...');
+                        const mealAnalysisResult = await window.langGraphClient.analyzeMeal(
+                            mealDescription,
+                            appState.userProfile
+                        );
+                        
+                        if (mealAnalysisResult && mealAnalysisResult.nutrition) {
+                            finalNutrition = mealAnalysisResult.nutrition;
+                            source = 'enhanced_ai';
+                            console.log('✅ Nutrition analyzed by enhanced AI:', finalNutrition);
+                            utils.showNotification('Meal analyzed by enhanced AI! 🚀', 'success');
+                            
+                            // Show any additional insights or suggestions
+                            if (mealAnalysisResult.message) {
+                                utils.showNotification(mealAnalysisResult.message, 'info');
+                            }
+                        } else {
+                            throw new Error('Enhanced AI analysis failed');
+                        }
+                    } catch (error) {
+                        console.error('❌ Enhanced AI analysis failed, trying basic AI:', error);
+                        
+                        // Fallback to basic OpenAI
+                        if (await window.openaiAPI?.isConfigured()) {
+                            try {
+                                const aiNutrition = await window.openaiAPI.analyzeMeal(mealDescription);
+                                if (aiNutrition) {
+                                    finalNutrition = aiNutrition;
+                                    source = 'ai';
+                                    console.log('✅ Nutrition analyzed by basic AI:', finalNutrition);
+                                    utils.showNotification('Meal analyzed by AI! 🤖', 'success');
+                                } else {
+                                    throw new Error('Basic AI analysis failed');
+                                }
+                            } catch (basicError) {
+                                console.error('❌ Basic AI analysis also failed:', basicError);
+                                finalNutrition = meals.getPlaceholderNutrition();
+                                utils.showNotification('AI analysis failed, using estimate. Consider adding this food to the database!', 'info');
+                            }
+                        } else {
+                            finalNutrition = meals.getPlaceholderNutrition();
+                            utils.showNotification('Enhanced AI failed and no OpenAI key. Using estimate!', 'info');
+                        }
+                    }
+                } else if (await window.openaiAPI?.isConfigured()) {
+                    // No LangGraph, try basic OpenAI
                     try {
                         const aiNutrition = await window.openaiAPI.analyzeMeal(mealDescription);
                         if (aiNutrition) {
                             finalNutrition = aiNutrition;
                             source = 'ai';
-                            console.log('✅ Nutrition analyzed by AI:', finalNutrition);
+                            console.log('✅ Nutrition analyzed by basic AI:', finalNutrition);
                             utils.showNotification('Meal analyzed by AI! 🤖', 'success');
                         } else {
                             throw new Error('AI analysis failed');
@@ -1821,10 +2479,124 @@ const meals = {
         }
     },
     
-    startVoiceLog: () => {
-        console.log('🎤 Voice logging not implemented yet');
-        utils.showNotification('Voice logging will be implemented soon!', 'info');
-        // TODO: Implement voice logging with speech-to-text
+    startVoiceLog: async () => {
+        console.log('🎤 Starting voice logging...');
+        console.log('🔍 Voice logging debug info:');
+        console.log('  - appState.langGraphReady:', appState.langGraphReady);
+        console.log('  - window.langGraphClient:', typeof window.langGraphClient);
+        console.log('  - window.SpeechService:', typeof window.SpeechService);
+        console.log('  - SpeechService.isSupported:', window.SpeechService ? window.SpeechService.isSupported() : 'N/A');
+        
+        console.log('🔍 Detailed state check:');
+        if (window.langGraphClient) {
+            console.log('  - langGraphClient.isReady:', window.langGraphClient.isReady);
+            console.log('  - langGraphClient.ipcRenderer:', !!window.langGraphClient.ipcRenderer);
+            console.log('  - langGraphClient.speechService:', !!window.langGraphClient.speechService);
+        }
+        
+        // Check if LangGraph speech capabilities are available
+        if (!appState.langGraphReady || !window.langGraphClient) {
+            console.log('⚠️ LangGraph not available, voice logging disabled');
+            console.log('🔍 LangGraph readiness details:');
+            console.log('  - appState.langGraphReady:', appState.langGraphReady);
+            console.log('  - window.langGraphClient exists:', !!window.langGraphClient);
+            if (window.langGraphClient) {
+                console.log('  - langGraphClient.isReady:', window.langGraphClient.isReady);
+                console.log('  - langGraphClient.speechService:', !!window.langGraphClient.speechService);
+            }
+            
+            // Let's also check if we can manually check the LangGraph status
+            if (window.langGraphClient && window.langGraphClient.checkReady) {
+                console.log('🔍 Manually checking LangGraph readiness...');
+                try {
+                    const manualCheck = await window.langGraphClient.checkReady();
+                    console.log('🔍 Manual readiness check result:', manualCheck);
+                    if (manualCheck && !appState.langGraphReady) {
+                        console.log('⚠️ Manual check passed but appState.langGraphReady is false - updating...');
+                        appState.langGraphReady = manualCheck;
+                    }
+                } catch (error) {
+                    console.error('❌ Manual readiness check failed:', error);
+                }
+            }
+            
+            if (!appState.langGraphReady || !window.langGraphClient) {
+                utils.showNotification('Voice logging requires enhanced AI features. Please ensure LangGraph is configured!', 'info');
+                return;
+            }
+        }
+        
+        // Check if speech service is available
+        if (!window.SpeechService || !window.SpeechService.isSupported()) {
+            console.log('⚠️ Speech recognition not supported');
+            console.log('🔍 Speech service details:');
+            console.log('  - window.SpeechService exists:', !!window.SpeechService);
+            console.log('  - SpeechService.isSupported():', window.SpeechService ? window.SpeechService.isSupported() : 'N/A');
+            utils.showNotification('Speech recognition is not supported in this browser!', 'error');
+            return;
+        }
+        
+        try {
+            console.log('✅ All checks passed, starting voice logging...');
+            console.log('🔍 About to call langGraphClient.startVoiceLogging with profile:', appState.userProfile);
+            
+            // Show loading state
+            utils.showLoading(true, 'Listening for voice input...');
+            
+            // Use LangGraph client for voice logging
+            const result = await window.langGraphClient.startVoiceLogging(appState.userProfile);
+            
+            console.log('🎤 Voice logging result:', result);
+            
+            // Process the results
+            if (result.processingResult) {
+                const { intentType, extractedData, message } = result.processingResult;
+                
+                // Show user what was understood
+                utils.showNotification(`Understood: "${result.transcript}"`, 'info');
+                
+                // Process based on intent type
+                if (intentType === 'meal' && extractedData) {
+                    // Automatically log the meal
+                    const mealData = {
+                        description: extractedData.description,
+                        timestamp: new Date().toISOString(),
+                        mealTime: extractedData.mealTime || 'other',
+                        nutrition: extractedData.nutrition || meals.getPlaceholderNutrition(),
+                        source: 'voice_log'
+                    };
+                    
+                    // Save to Firebase
+                    if (appState.currentUser) {
+                        await window.firebaseDB.addMealLog(appState.currentUser.uid, mealData);
+                        
+                        // Update local state
+                        appState.todaysMeals.push(mealData);
+                        dashboard.calculateDailyNutrition();
+                        dashboard.updateNutritionDisplay();
+                        dashboard.renderMealsList();
+                        
+                        utils.showNotification('Meal logged successfully via voice!', 'success');
+                    }
+                } else if (intentType === 'activity' && extractedData) {
+                    // Log activity
+                    utils.showNotification(`Activity logged: ${extractedData.description}`, 'success');
+                } else if (intentType === 'weight' && extractedData) {
+                    // Log weight
+                    utils.showNotification(`Weight logged: ${extractedData.weight} ${extractedData.unit}`, 'success');
+                } else {
+                    // General response
+                    utils.showNotification(message || 'Voice input processed successfully!', 'info');
+                }
+            }
+            
+        } catch (error) {
+            console.error('❌ Voice logging error:', error);
+            console.error('❌ Error details:', error.stack);
+            utils.showNotification(`Voice logging failed: ${error.message}`, 'error');
+        } finally {
+            utils.showLoading(false);
+        }
     },
     
     showPhotoUpload: () => {
@@ -1880,16 +2652,25 @@ const aiAssistant = {
             });
         }
         
-        // Check OpenAI configuration
-        const isConfigured = await window.openaiAPI?.isConfigured();
-        if (!isConfigured) {
+        // Check capabilities (LangGraph or OpenAI)
+        const isOpenAIConfigured = await window.openaiAPI?.isConfigured();
+        const hasAICapability = appState.langGraphReady || isOpenAIConfigured;
+        
+        console.log('🔍 AI Assistant capabilities:');
+        console.log('  - LangGraph ready:', appState.langGraphReady);
+        console.log('  - OpenAI configured:', isOpenAIConfigured);
+        console.log('  - Has AI capability:', hasAICapability);
+        
+        if (!hasAICapability) {
             aiAssistant.addMessage("I need an OpenAI API key to help you with comprehensive wellness assistance. Please configure your API key!", 'system');
             if (elements.assistantChatStatus) {
                 elements.assistantChatStatus.innerHTML = '<span class="status-indicator">⚠️</span><span>OpenAI API key needed</span>';
             }
         } else {
+            // Show enhanced status if LangGraph is available
             if (elements.assistantChatStatus) {
-                elements.assistantChatStatus.innerHTML = '<span class="status-indicator">✅</span><span>Ready to help!</span>';
+                elements.assistantChatStatus.innerHTML = '<span class="status-indicator">🤖</span><span>Your AI coach is ready!</span>';
+                aiAssistant.addMessage("Hello! I'm your AI wellness coach, here to help you achieve your health goals. I can assist with meal logging, nutrition analysis, and personalized coaching insights. Try telling me about your meals like 'I just ate a chicken salad' or ask 'How am I doing with my goals?'", 'ai');
             }
         }
         
@@ -1918,20 +2699,112 @@ const aiAssistant = {
         }
         
         try {
-            // Get current user data for context
-            const userProfile = appState.userProfile;
-            const recentData = {
-                calories: appState.dailyNutrition?.calories || 0,
-                recentMeals: appState.todaysMeals?.slice(-2).map(m => m.description).join(', ') || 'None'
-            };
+            let response;
             
-            // Get AI response
-            const response = await window.openaiAPI.comprehensiveChat(
-                message, 
-                aiAssistant.conversationHistory, 
-                userProfile, 
-                recentData
-            );
+            // Use advanced coaching workflow if available
+            if (appState.langGraphReady && window.langGraphClient) {
+                console.log('🤖 Using advanced AI coaching workflow...');
+                
+                // Get current user data for context
+                const userProfile = appState.userProfile;
+                const recentData = {
+                    calories: appState.dailyNutrition?.calories || 0,
+                    recentMeals: appState.todaysMeals?.slice(-2).map(m => m.description).join(', ') || 'None',
+                    dailyNutrition: appState.dailyNutrition,
+                    todaysMeals: appState.todaysMeals
+                };
+                
+                // Use coaching workflow for comprehensive assistance
+                response = await window.langGraphClient.getCoaching(
+                    message,
+                    userProfile,
+                    recentData
+                );
+                
+                console.log('🤖 AI coaching response:', response);
+                
+                // *** NEW: Auto-detect and log meals/activities from user messages ***
+                await aiAssistant.detectAndLogFromMessage(message, userProfile);
+                
+                // Transform LangGraph coaching response to expected format
+                if (response && response.motivationalMessage) {
+                    // Create a comprehensive response message
+                    let responseMessage = response.motivationalMessage;
+                    
+                    // Add insights if available
+                    if (response.insights && response.insights.length > 0) {
+                        responseMessage += '\n\n📊 **Insights:**\n';
+                        response.insights.forEach(insight => {
+                            responseMessage += `${insight.emoji || '•'} ${insight.message}\n`;
+                        });
+                    }
+                    
+                    // Add suggestions if available
+                    if (response.suggestions && response.suggestions.length > 0) {
+                        responseMessage += '\n💡 **Suggestions:**\n';
+                        response.suggestions.forEach(suggestion => {
+                            responseMessage += `• ${suggestion}\n`;
+                        });
+                    }
+                    
+                    // Add action items if available
+                    if (response.actionItems && response.actionItems.length > 0) {
+                        responseMessage += '\n✅ **Quick Actions:**\n';
+                        response.actionItems.forEach(action => {
+                            responseMessage += `• ${action}\n`;
+                        });
+                    }
+                    
+                    // Transform to expected format
+                    response = {
+                        message: responseMessage,
+                        actionData: null // LangGraph handles actions differently
+                    };
+                } else {
+                    console.warn('⚠️ LangGraph response missing expected format, using fallback');
+                    response = {
+                        message: response?.motivationalMessage || "I'm here to help you on your wellness journey!",
+                        actionData: null
+                    };
+                }
+                
+                // Handle enhanced response format
+                if (response.actions && response.actions.length > 0) {
+                    // Process any actions
+                    for (const action of response.actions) {
+                        if (action.type === 'meal') {
+                            await aiAssistant.logMealFromAI(action.data);
+                        } else if (action.type === 'activity') {
+                            await aiAssistant.logActivityFromAI(action.data);
+                        } else if (action.type === 'weight') {
+                            await aiAssistant.logWeightFromAI(action.data);
+                        }
+                    }
+                }
+            } else {
+                console.log('🤖 Using basic comprehensive chat...');
+                // Fallback to basic comprehensive chat
+                const userProfile = appState.userProfile;
+                const recentData = {
+                    calories: appState.dailyNutrition?.calories || 0,
+                    recentMeals: appState.todaysMeals?.slice(-2).map(m => m.description).join(', ') || 'None'
+                };
+                
+                response = await window.openaiAPI.comprehensiveChat(
+                    message, 
+                    aiAssistant.conversationHistory, 
+                    userProfile, 
+                    recentData
+                );
+                
+                // *** NEW: Auto-detect and log meals/activities from user messages ***
+                await aiAssistant.detectAndLogFromMessage(message, userProfile);
+                
+                // Process any action data
+                if (response.actionData) {
+                    await aiAssistant.processAction(response.actionData);
+                }
+            }
             
             // Add to conversation history
             aiAssistant.conversationHistory.push(
@@ -1942,18 +2815,13 @@ const aiAssistant = {
             // Add AI message
             aiAssistant.addMessage(response.message, 'ai');
             
-            // Process any action data
-            if (response.actionData) {
-                await aiAssistant.processAction(response.actionData);
-            }
-            
             // Reset status
             if (elements.assistantChatStatus) {
-                elements.assistantChatStatus.innerHTML = '<span class="status-indicator">✅</span><span>Ready to help!</span>';
+                elements.assistantChatStatus.innerHTML = '<span class="status-indicator">🤖</span><span>Your AI coach is ready!</span>';
             }
             
         } catch (error) {
-            console.error('❌ Error in AI assistant chat:', error);
+            console.error('❌ Error in AI assistant:', error);
             aiAssistant.addMessage("I'm having trouble connecting right now. Please try again in a moment.", 'ai');
             
             if (elements.assistantChatStatus) {
@@ -2061,14 +2929,68 @@ const aiAssistant = {
     },
 
     quickLog: async (type) => {
+        if (type === 'progress') {
+            // Actually show real progress data instead of generic message
+            console.log('📊 Fetching real progress data...');
+            
+            try {
+                utils.showLoading(true, 'Checking your progress...');
+                
+                let progressMessage = "📊 **Your Progress Today:**\n\n";
+                
+                // Get today's meals
+                const todaysMeals = appState.todaysMeals || [];
+                const totalCalories = appState.dailyNutrition?.calories || 0;
+                const totalProtein = appState.dailyNutrition?.protein || 0;
+                
+                progressMessage += `🍽️ **Meals Logged:** ${todaysMeals.length}\n`;
+                progressMessage += `🔥 **Total Calories:** ${totalCalories}\n`;
+                progressMessage += `💪 **Protein:** ${totalProtein}g\n\n`;
+                
+                if (todaysMeals.length > 0) {
+                    progressMessage += "**Recent Meals:**\n";
+                    todaysMeals.slice(-3).forEach(meal => {
+                        const time = new Date(meal.date || meal.timestamp).toLocaleTimeString('en-US', { 
+                            hour: 'numeric', 
+                            minute: '2-digit' 
+                        });
+                        progressMessage += `• ${meal.description} (${time})\n`;
+                    });
+                } else {
+                    progressMessage += "No meals logged today. Try saying 'I had [food]' to log a meal!\n";
+                }
+                
+                // Goal progress
+                const userGoal = appState.userProfile?.primary_goal;
+                if (userGoal) {
+                    progressMessage += `\n🎯 **Goal:** ${userGoal}\n`;
+                    
+                    if (userGoal === 'lose fat' && totalCalories > 0) {
+                        progressMessage += totalCalories < 1800 ? "✅ Good calorie management!\n" : "⚠️ Consider lighter meals\n";
+                    } else if (userGoal === 'build muscle' && totalProtein > 0) {
+                        progressMessage += totalProtein >= 100 ? "✅ Great protein intake!\n" : "💡 Try adding more protein\n";
+                    }
+                }
+                
+                aiAssistant.addMessage(progressMessage, 'ai');
+                
+            } catch (error) {
+                console.error('❌ Error fetching progress:', error);
+                aiAssistant.addMessage("I had trouble fetching your progress. Please try again.", 'ai');
+            } finally {
+                utils.showLoading(false);
+            }
+            return;
+        }
+        
+        // Original prompts for other types
         const prompts = {
             meal: "What did you eat? Please describe your meal and I'll help you log it with nutritional information.",
             activity: "What activity or exercise did you do? Tell me about the type and duration, and I'll log it for you.",
-            weight: "What's your current weight? I'll help you track your weight progress.",
-            progress: "Let me check how you're doing today! Looking at your goals and recent activity..."
+            weight: "What's your current weight? I'll help you track your weight progress."
         };
         
-        const prompt = prompts[type] || prompts.progress;
+        const prompt = prompts[type] || "How can I help you today?";
         
         // Have the AI ask the question instead of filling the input
         aiAssistant.addMessage(prompt, 'ai');
@@ -2135,269 +3057,403 @@ const aiAssistant = {
         if (logs.length > 5) {
             logs[logs.length - 1].remove();
         }
+    },
+
+    detectAndLogFromMessage: async (message, userProfile) => {
+        console.log('🔍 Analyzing message for meals/activities:', message);
+        
+        try {
+            const lowerMessage = message.toLowerCase();
+            
+            // Enhanced meal detection patterns
+            const mealPatterns = [
+                /(?:i had|i ate|i just had|just ate|for (?:breakfast|lunch|dinner|snack))\s*:?\s*([^.!?]+)/i,
+                /(?:had|ate)\s+(a|an|some|the)?\s*([^.!?]+)(?:\s+for\s+(?:breakfast|lunch|dinner|snack))?/i,
+                /(?:breakfast|lunch|dinner|snack)\s*:?\s*([^.!?]+)/i
+            ];
+            
+            // Activity detection patterns  
+            const activityPatterns = [
+                /(?:i did|just did|went for|did some|i ran|i walked|i sprinted|went)\s+(?:a|an|some)?\s*([^.!?]+)/i,
+                /(?:workout|exercise|training|cardio|running|walking|cycling|swimming|lifting)\s*:?\s*([^.!?]*)/i,
+                /(\d+)\s*(?:mile|miles|km|minutes?|mins?|hours?)\s+(?:of\s+)?([^.!?]+)/i
+            ];
+            
+            let detectedMeal = null;
+            let detectedActivity = null;
+            
+            // Try to detect meals
+            for (const pattern of mealPatterns) {
+                const match = message.match(pattern);
+                if (match && match[1]) {
+                    let description = match[1].trim();
+                    // Clean up the description
+                    description = description.replace(/^(a|an|some|the)\s+/i, '');
+                    description = description.replace(/\s*\.$/, '');
+                    
+                    if (description.length > 3) { // Must be at least 4 characters
+                        detectedMeal = description;
+                        break;
+                    }
+                }
+            }
+            
+            // Try to detect activities  
+            for (const pattern of activityPatterns) {
+                const match = message.match(pattern);
+                if (match && match[1]) {
+                    let description = match[1].trim();
+                    description = description.replace(/^(a|an|some|the)\s+/i, '');
+                    description = description.replace(/\s*\.$/, '');
+                    
+                    if (description.length > 3) {
+                        detectedActivity = description;
+                        break;
+                    }
+                }
+            }
+            
+            // Log detected meal
+            if (detectedMeal && appState.currentUser) {
+                console.log('🍽️ Auto-detected meal:', detectedMeal);
+                
+                // Generate basic nutrition estimate
+                const estimatedNutrition = aiAssistant.estimateNutrition(detectedMeal);
+                
+                const mealData = {
+                    description: detectedMeal,
+                    nutrition: estimatedNutrition,
+                    source: 'ai_auto_detect',
+                    timestamp: new Date().toISOString(),
+                    confidence: 'medium'
+                };
+                
+                // Save to Firebase
+                await window.firebaseDB.addMealLog(appState.currentUser.uid, mealData);
+                
+                // Update local state
+                appState.todaysMeals.push(mealData);
+                dashboard.calculateDailyNutrition();
+                dashboard.updateNutritionDisplay();
+                dashboard.renderMealsList();
+                
+                // *** FIX: Update AI Assistant live stats panel ***
+                await aiAssistant.updateLiveStats();
+                
+                // Show confirmation
+                utils.showNotification(`✅ Logged: ${detectedMeal}`, 'success');
+                aiAssistant.addRecentLog(`🍽️ ${detectedMeal} (auto-logged)`);
+                
+                console.log('✅ Meal auto-logged successfully');
+            }
+            
+            // Log detected activity
+            if (detectedActivity && appState.currentUser) {
+                console.log('🏃 Auto-detected activity:', detectedActivity);
+                
+                // For now, just add to recent logs (can expand to full activity tracking later)
+                utils.showNotification(`✅ Activity noted: ${detectedActivity}`, 'success');
+                aiAssistant.addRecentLog(`🏃 ${detectedActivity} (auto-logged)`);
+                
+                console.log('✅ Activity auto-logged successfully');
+            }
+            
+        } catch (error) {
+            console.error('❌ Error in auto-detection:', error);
+            // Fail silently - don't interrupt the conversation
+        }
+    },
+    
+    estimateNutrition: (foodDescription) => {
+        const lower = foodDescription.toLowerCase();
+        
+        // Basic nutrition estimates for common foods
+        const nutritionMap = {
+            // Common meals
+            'pancakes': { calories: 350, protein: 8, carbs: 45, fat: 12, sugar: 15 },
+            'eggs': { calories: 140, protein: 12, carbs: 1, fat: 10, sugar: 0 },
+            'oatmeal': { calories: 150, protein: 5, carbs: 30, fat: 3, sugar: 12 },
+            'toast': { calories: 200, protein: 6, carbs: 30, fat: 4, sugar: 3 },
+            'cereal': { calories: 200, protein: 4, carbs: 40, fat: 2, sugar: 20 },
+            
+            // Lunch/dinner foods
+            'chicken': { calories: 250, protein: 25, carbs: 0, fat: 14, sugar: 0 },
+            'salad': { calories: 150, protein: 5, carbs: 15, fat: 8, sugar: 8 },
+            'pasta': { calories: 400, protein: 15, carbs: 60, fat: 8, sugar: 5 },
+            'penne vodka': { calories: 650, protein: 35, carbs: 65, fat: 25, sugar: 8 },
+            'sandwich': { calories: 350, protein: 18, carbs: 35, fat: 15, sugar: 5 },
+            'pizza': { calories: 500, protein: 20, carbs: 45, fat: 25, sugar: 8 },
+            'burger': { calories: 550, protein: 25, carbs: 40, fat: 30, sugar: 6 },
+            'rice': { calories: 300, protein: 6, carbs: 60, fat: 2, sugar: 1 },
+            'soup': { calories: 200, protein: 8, carbs: 20, fat: 8, sugar: 5 }
+        };
+        
+        // Try to find matching food
+        for (const [food, nutrition] of Object.entries(nutritionMap)) {
+            if (lower.includes(food)) {
+                return nutrition;
+            }
+        }
+        
+        // Default estimate for unknown foods
+        return { calories: 300, protein: 15, carbs: 35, fat: 12, sugar: 8 };
     }
 };
+
+// Make key objects globally accessible
+window.aiAssistant = aiAssistant;
+window.utils = utils;
+window.dashboard = dashboard;
 
 // Global event listeners that need to be available regardless of current screen
 const setupGlobalEventListeners = () => {
     console.log('🌐 Setting up global event listeners...');
     
-    // Profile modal event listeners
-    const profileModal = document.getElementById('profileModal');
+    // Profile modal close button
     const closeProfileModal = document.getElementById('closeProfileModal');
-    
     if (closeProfileModal) {
-        closeProfileModal.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('❌ Close profile modal clicked');
+        closeProfileModal.addEventListener('click', () => {
             utils.closeProfileModal();
         });
-        console.log('✅ Close profile modal listener added');
-    } else {
-        console.log('⚠️ Close profile modal button not found');
     }
     
+    // Modal background click to close
+    const profileModal = document.getElementById('profileModal');
     if (profileModal) {
         profileModal.addEventListener('click', (e) => {
             if (e.target === profileModal) {
-                console.log('🔄 Profile modal background clicked, closing');
                 utils.closeProfileModal();
             }
         });
-        console.log('✅ Profile modal background click listener added');
-    } else {
-        console.log('⚠️ Profile modal element not found');
     }
     
-    // Keyboard shortcuts
-    document.addEventListener('keydown', (e) => {
-        // ESC key to close modal
-        if (e.key === 'Escape') {
-            const activeModal = document.querySelector('.modal.active');
-            if (activeModal) {
-                console.log('⌨️ ESC pressed, closing modal');
-                utils.closeProfileModal();
+    // Tab switching in profile modal
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    tabButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            const targetTab = e.target.getAttribute('data-tab');
+            if (targetTab) {
+                switchTab(targetTab);
             }
-        }
-        
-        // Ctrl/Cmd + , to open settings
-        if ((e.ctrlKey || e.metaKey) && e.key === ',') {
-            e.preventDefault();
-            console.log('⌨️ Settings shortcut pressed');
-            utils.showProfileSettings();
-        }
-    });
-    console.log('✅ Keyboard shortcuts set up');
-    
-    // Tab switching for profile modal
-    const initializeTabSwitching = () => {
-        const tabButtons = document.querySelectorAll('.tab-btn');
-        const tabContents = document.querySelectorAll('.tab-content');
-        
-        console.log('🔍 Found', tabButtons.length, 'tab buttons and', tabContents.length, 'tab contents');
-        
-        tabButtons.forEach((button, index) => {
-            button.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                const targetTab = e.currentTarget.getAttribute('data-tab');
-                console.log('📝 Tab clicked:', targetTab, 'Button index:', index);
-                
-                // Remove active class from all tabs and contents
-                tabButtons.forEach(btn => btn.classList.remove('active'));
-                tabContents.forEach(content => content.classList.remove('active'));
-                
-                // Add active class to clicked tab and corresponding content
-                e.currentTarget.classList.add('active');
-                const targetContent = document.getElementById(targetTab + 'Tab');
-                if (targetContent) {
-                    targetContent.classList.add('active');
-                    console.log('✅ Tab switched to:', targetTab);
-                } else {
-                    console.error('❌ Tab content not found:', targetTab + 'Tab');
-                }
-            });
         });
-        console.log('✅ Tab switching initialized for', tabButtons.length, 'tabs');
-    };
+    });
     
-    // Initialize tab switching
-    initializeTabSwitching();
-    
-    // Profile form submissions
+    // Form submissions
     const profileUpdateForm = document.getElementById('profileUpdateForm');
-    const goalsUpdateForm = document.getElementById('goalsUpdateForm');
-    
     if (profileUpdateForm) {
         profileUpdateForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            console.log('👤 Updating profile...');
-            const submitBtn = profileUpdateForm.querySelector('button[type="submit"]');
-            const originalText = submitBtn.textContent;
-            
-            try {
-                submitBtn.textContent = '🔄 Updating...';
-                submitBtn.disabled = true;
-                await utils.updateProfile(new FormData(profileUpdateForm));
-            } catch (error) {
-                console.error('❌ Profile update failed:', error);
-            } finally {
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
-            }
+            await utils.updateProfile(new FormData(e.target));
         });
-        console.log('✅ Profile form submission listener added');
-    } else {
-        console.log('⚠️ Profile update form element not found');
     }
     
+    const goalsUpdateForm = document.getElementById('goalsUpdateForm');
     if (goalsUpdateForm) {
         goalsUpdateForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            console.log('🎯 Updating goals...');
-            const submitBtn = goalsUpdateForm.querySelector('button[type="submit"]');
-            const originalText = submitBtn.textContent;
-            
-            try {
-                submitBtn.textContent = '🔄 Updating...';
-                submitBtn.disabled = true;
-                await utils.updateGoals(new FormData(goalsUpdateForm));
-            } catch (error) {
-                console.error('❌ Goals update failed:', error);
-            } finally {
-                submitBtn.textContent = originalText;
-                submitBtn.disabled = false;
+            await utils.updateGoals(new FormData(e.target));
+        });
+    }
+    
+    // AI Assistant chat functionality
+    const assistantSendBtn = document.getElementById('assistantSendBtn');
+    const assistantChatInput = document.getElementById('assistantChatInput');
+    
+    if (assistantSendBtn) {
+        assistantSendBtn.addEventListener('click', () => {
+            if (window.aiAssistant && window.aiAssistant.sendMessage) {
+                window.aiAssistant.sendMessage();
             }
         });
-        console.log('✅ Goals form submission listener added');
-    } else {
-        console.log('⚠️ Goals update form element not found');
     }
     
-    // Weight unit change handler for goal weight display
-    const updateWeightUnit = document.getElementById('updateWeightUnit');
-    const updateGoalWeightUnit = document.getElementById('updateGoalWeightUnit');
-    
-    if (updateWeightUnit && updateGoalWeightUnit) {
-        updateWeightUnit.addEventListener('change', (e) => {
-            updateGoalWeightUnit.textContent = e.target.value;
-            console.log('⚖️ Goal weight unit updated to:', e.target.value);
-        });
-        console.log('✅ Weight unit change listener added');
-    } else {
-        console.log('⚠️ Weight unit elements not found');
-    }
-    
-    console.log('✅ Global event listeners set up complete');
-};
-
-// Application initialization
-const app = {
-    initialize: async () => {
-        console.log('🚀 Initializing Fitly application...');
-        console.log('🔍 Environment check:');
-        console.log('  - Window:', typeof window !== 'undefined');
-        console.log('  - Document:', typeof document !== 'undefined');
-        console.log('  - Firebase Auth:', typeof window.firebaseAuth !== 'undefined');
-        console.log('  - Firebase DB:', typeof window.firebaseDB !== 'undefined');
-        console.log('  - OpenAI API:', typeof window.openaiAPI !== 'undefined');
-        console.log('  - Nutrition Utils:', typeof window.nutritionUtils !== 'undefined');
-        
-        try {
-            console.log('🎨 Step 0: Initializing theme...');
-            // Initialize dark mode based on saved preference
-            const savedTheme = localStorage.getItem('fitly-theme');
-            if (savedTheme === 'dark') {
-                document.body.classList.add('dark-theme');
-                console.log('🌙 Dark mode loaded from saved preference');
+    if (assistantChatInput) {
+        assistantChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (window.aiAssistant && window.aiAssistant.sendMessage) {
+                    window.aiAssistant.sendMessage();
+                }
             }
-            
-            console.log('🔐 Step 1: Initializing authentication...');
-            // Initialize authentication
-            await authModule.initialize();
-            console.log('✅ Step 1 complete: Authentication initialized');
-            
-            console.log('📝 Step 2: Initializing onboarding...');
-            // Initialize onboarding
-            await onboarding.initialize();
-            console.log('✅ Step 2 complete: Onboarding initialized');
-            
-            console.log('✅ Fitly application initialized successfully');
-            console.log('🔍 Final initialization state:');
-            console.log('  - Current screen:', appState.currentScreen);
-            console.log('  - Current user:', appState.currentUser?.uid || 'None');
-            console.log('  - User profile:', !!appState.userProfile);
-            console.log('  - Onboarding mode:', appState.onboardingMode);
-            console.log('  - Theme:', savedTheme || 'light');
-            
-        } catch (error) {
-            console.error('❌ Application initialization failed:', error);
-            console.error('❌ Initialization error stack:', error.stack);
-            utils.showNotification('Application failed to initialize. Please refresh the page.', 'error');
-        }
+        });
     }
-};
-
-// Start the application when DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('📄 DOM loaded, starting Fitly...');
-    console.log('🔍 DOM ready state:', document.readyState);
-    console.log('🔍 Document body:', document.body ? 'available' : 'missing');
     
-    // Set up global event listeners first
-    setupGlobalEventListeners();
+    // Theme toggle
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('change', (e) => {
+            utils.toggleDarkMode(e.target.checked);
+        });
+    }
     
-    // Add a small delay to ensure all scripts are loaded
-    setTimeout(() => {
-        console.log('⏱️ Delayed initialization starting...');
-        app.initialize();
-    }, 100);
-});
-
-// Add window load event for additional debugging
-window.addEventListener('load', () => {
-    console.log('🌐 Window fully loaded');
-    console.log('🔍 All dependencies loaded check:');
-    console.log('  - Firebase Auth:', typeof window.firebaseAuth !== 'undefined');
-    console.log('  - Firebase DB:', typeof window.firebaseDB !== 'undefined');
-    console.log('  - OpenAI API:', typeof window.openaiAPI !== 'undefined');
-    console.log('  - Nutrition Utils:', typeof window.nutritionUtils !== 'undefined');
-});
-
-// Add error handling for unhandled errors
-window.addEventListener('error', (event) => {
-    console.error('🚨 Unhandled error:', event.error);
-    console.error('🚨 Error details:', {
-        message: event.message,
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno
+    // Voice logging button
+    const voiceLogBtn = document.getElementById('voiceLogBtn');
+    if (voiceLogBtn) {
+        voiceLogBtn.addEventListener('click', () => {
+            if (window.aiAssistant && window.aiAssistant.startVoiceLogging) {
+                window.aiAssistant.startVoiceLogging();
+            }
+        });
+    }
+    
+    // Quick action buttons
+    const quickActionButtons = document.querySelectorAll('.quick-action-btn');
+    quickActionButtons.forEach(button => {
+        button.addEventListener('click', (e) => {
+            const buttonText = e.target.textContent || e.target.innerText;
+            if (buttonText.includes('Log Meal')) {
+                if (window.aiAssistant && window.aiAssistant.quickLog) {
+                    window.aiAssistant.quickLog('meal');
+                }
+            } else if (buttonText.includes('Log Activity')) {
+                if (window.aiAssistant && window.aiAssistant.quickLog) {
+                    window.aiAssistant.quickLog('activity');
+                }
+            } else if (buttonText.includes('Log Weight')) {
+                if (window.aiAssistant && window.aiAssistant.quickLog) {
+                    window.aiAssistant.quickLog('weight');
+                }
+            } else if (buttonText.includes('Check Progress')) {
+                if (window.aiAssistant && window.aiAssistant.quickLog) {
+                    window.aiAssistant.quickLog('progress');
+                }
+            }
+        });
     });
-});
-
-// Add error handling for unhandled promise rejections
-window.addEventListener('unhandledrejection', (event) => {
-    console.error('🚨 Unhandled promise rejection:', event.reason);
-    console.error('🚨 Promise:', event.promise);
-});
-
-// Export for debugging
-window.fitlyApp = {
-    appState,
-    utils,
-    authModule,
-    onboarding,
-    dashboard,
-    meals,
-    weight,
-    aiAssistant
+    
+    console.log('✅ Global event listeners set up successfully');
 };
 
-// Make aiAssistant, utils, and dashboard globally available for onclick handlers
-window.aiAssistant = aiAssistant;
-window.utils = utils;
-window.dashboard = dashboard;
+// Tab switching function
+const switchTab = (tabName) => {
+    console.log('🔄 Switching to tab:', tabName);
+    
+    // Remove active class from all tab buttons and content
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    
+    // Add active class to selected tab button and content
+    const targetButton = document.querySelector(`[data-tab="${tabName}"]`);
+    const targetContent = document.getElementById(`${tabName}Tab`);
+    
+    if (targetButton) {
+        targetButton.classList.add('active');
+    }
+    if (targetContent) {
+        targetContent.classList.add('active');
+    }
+    
+    console.log('✅ Tab switched to:', tabName);
+};
 
-console.log('✅ Fitly app.js loaded');
-console.log('🔍 Global fitlyApp object available:', typeof window.fitlyApp !== 'undefined'); 
+// Initialize the application
+const init = async () => {
+    console.log('🚀 Starting Fitly initialization...');
+    
+    try {
+        // Wait for Firebase to be ready
+        console.log('⏳ Waiting for Firebase to initialize...');
+        console.log('🔍 window.firebaseReady available:', typeof window.firebaseReady);
+        
+        const firebaseConfigured = await window.firebaseReady;
+        console.log('🔐 Firebase initialization complete. Configured:', firebaseConfigured);
+        
+        // Initialize enhanced AI features
+        console.log('🤖 Initializing AI features...');
+        console.log('🔍 Enhanced AI client available:', typeof window.LangGraphClient);
+        
+        if (window.LangGraphClient) {
+            window.langGraphClient = new window.LangGraphClient();
+            const enhancedReady = await window.langGraphClient.initialize();
+            appState.langGraphReady = enhancedReady;
+            console.log('🤖 AI features initialized. Enhanced mode:', enhancedReady);
+        } else {
+            console.log('⚠️ Enhanced AI not available, using basic mode');
+            appState.langGraphReady = false;
+        }
+        
+        console.log('🔐 About to initialize authentication...');
+        console.log('🔍 window.firebaseAuth available:', typeof window.firebaseAuth);
+        
+        // Initialize authentication
+        console.log('🔐 Initializing authentication...');
+        await authModule.initialize();
+        console.log('✅ Authentication initialized successfully');
+        
+        // Initialize onboarding
+        console.log('📝 Initializing onboarding...');
+        await onboarding.initialize();
+        console.log('✅ Onboarding initialized successfully');
+        
+        // Initialize dashboard
+        console.log('📊 Initializing dashboard...');
+        await dashboard.initialize();
+        console.log('✅ Dashboard initialized successfully');
+        
+        // Set up global event listeners
+        console.log('🌐 Setting up global event listeners...');
+        setupGlobalEventListeners();
+        console.log('✅ Global event listeners set up successfully');
+        
+        console.log('✅ Fitly app initialized successfully');
+        console.log('🔍 Final app state:', {
+            currentUser: appState.currentUser?.uid || 'none',
+            userProfile: !!appState.userProfile,
+            currentScreen: appState.currentScreen,
+            langGraphReady: appState.langGraphReady
+        });
+        
+    } catch (error) {
+        console.error('❌ Error initializing Fitly:', error);
+        console.error('❌ Error name:', error.name);
+        console.error('❌ Error message:', error.message);
+        console.error('❌ Error stack:', error.stack);
+        
+        // More specific error handling
+        if (error.message && error.message.includes('Firebase')) {
+            console.error('🔥 Firebase-related error detected');
+        }
+        if (error.message && error.message.includes('LangGraph')) {
+            console.error('🤖 LangGraph-related error detected');
+        }
+        
+        utils.showNotification('Failed to initialize Fitly. Please try again.', 'error');
+    }
+};
+
+// Wrap entire initialization in error handling
+console.log('🔄 About to call init() function...');
+console.log('🔍 init function type:', typeof init);
+
+// Add a final safety net
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('❌ UNHANDLED PROMISE REJECTION:', event.reason);
+    console.error('❌ Promise:', event.promise);
+    // Prevent the default behavior (which would close the app)
+    event.preventDefault();
+});
+
+try {
+    // Call init and handle any promise rejections
+    const initResult = init();
+    if (initResult && typeof initResult.then === 'function') {
+        initResult.catch(error => {
+            console.error('❌ Init promise rejected:', error);
+            console.error('❌ Error stack:', error.stack);
+            // Don't let the error crash the app
+        });
+    }
+    console.log('✅ init() function called successfully');
+} catch (error) {
+    console.error('❌ Error calling init():', error);
+    console.error('❌ Error stack:', error.stack);
+    
+    // Still try to show the UI in a basic state
+    try {
+        console.log('🔧 Attempting basic recovery...');
+        utils.switchScreen('onboarding');
+        utils.showNotification('App started with limited functionality. Some features may not work.', 'error');
+    } catch (recoveryError) {
+        console.error('❌ Recovery also failed:', recoveryError);
+    }
+}

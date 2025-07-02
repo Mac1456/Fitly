@@ -6,6 +6,10 @@ const fs = require('fs');
 // Load environment variables from .env file
 require('dotenv').config();
 
+// Import LangGraph components
+const { LangGraphManager } = require('./langgraph/langgraph-manager');
+const { FirebaseTools } = require('./langgraph/tools/firebase-tools');
+
 let mainWindow;
 
 function createWindow() {
@@ -70,6 +74,10 @@ app.on('window-all-closed', () => {
 // Secure OpenAI API configuration
 let OPENAI_API_KEY = null;
 
+// LangGraph Manager
+let langGraphManager = null;
+let firebaseTools = null;
+
 // Try to load API key from multiple sources (in order of preference)
 function loadOpenAIKey() {
   // 1. Environment variable or .env file (dotenv automatically loads .env into process.env)
@@ -99,8 +107,71 @@ function loadOpenAIKey() {
   return false;
 }
 
-// Initialize OpenAI key on startup
+// Load OpenAI API key from environment
 loadOpenAIKey();
+
+// Initialize LangGraph as soon as we have the OpenAI key
+if (OPENAI_API_KEY) {
+    console.log('🤖 OpenAI key available, initializing LangGraph early...');
+    initializeLangGraph().catch(error => {
+        console.error('❌ Early LangGraph initialization failed:', error);
+    });
+}
+
+// Initialize LangGraph Manager
+async function initializeLangGraph() {
+    if (langGraphManager) {
+        console.log('⚠️ LangGraph Manager already initialized');
+        return;
+    }
+    
+    console.log('🤖 Initializing LangGraph Manager...');
+    
+    try {
+        console.log('🔍 Pre-initialization checks:');
+        console.log('  - OPENAI_API_KEY available:', !!OPENAI_API_KEY);
+        console.log('  - LangGraphManager class:', typeof LangGraphManager);
+        console.log('  - FirebaseTools class:', typeof FirebaseTools);
+        
+        // Create Firebase tools instance
+        console.log('🔍 Creating FirebaseTools instance...');
+        const firebaseTools = new FirebaseTools();
+        console.log('✅ FirebaseTools instance created');
+        
+        // Create LangGraph manager with OpenAI key and Firebase tools
+        console.log('🔍 Creating LangGraphManager instance...');
+        console.log('  - Using OpenAI key (first 10 chars):', OPENAI_API_KEY?.substring(0, 10) + '...');
+        
+        langGraphManager = new LangGraphManager();
+        console.log('✅ LangGraphManager instance created');
+        
+        console.log('🔍 Setting up LangGraph workflows...');
+        await langGraphManager.initialize(OPENAI_API_KEY, firebaseTools);
+        console.log('✅ All workflows initialized');
+        
+        console.log('🤖 LangGraph Manager initialized successfully');
+        console.log('🔍 Final LangGraph Manager state:');
+        console.log('  - initialized:', langGraphManager.initialized);
+        console.log('  - workflows:', Object.keys(langGraphManager.workflows || {}));
+        console.log('  - llm configured:', !!langGraphManager.llm);
+        
+    } catch (error) {
+        console.error('❌ Failed to initialize LangGraph Manager:', error);
+        console.error('❌ Error stack:', error.stack);
+        langGraphManager = null;
+        throw error;
+    }
+}
+
+// Update Firebase tools when config becomes available
+function updateFirebaseTools(db, auth, storage) {
+    if (firebaseTools) {
+        firebaseTools.db = db;
+        firebaseTools.auth = auth;
+        firebaseTools.storage = storage;
+        console.log('✅ Firebase tools updated for LangGraph');
+    }
+}
 
 // Secure OpenAI API call function (runs in main process only)
 async function makeOpenAIRequest(messages, options = {}) {
@@ -412,7 +483,225 @@ function getFirebaseConfig() {
 
 // IPC handler for secure Firebase config
 ipcMain.handle('get-firebase-config', async () => {
-    return getFirebaseConfig();
+    const config = getFirebaseConfig();
+    
+    // Initialize LangGraph when we have both OpenAI key and are setting up Firebase
+    if (OPENAI_API_KEY && !langGraphManager) {
+        await initializeLangGraph();
+    }
+    
+    return config;
 });
 
-console.log('Fitly main process initialized'); 
+// LangGraph IPC Handlers
+ipcMain.handle('langgraph-is-ready', () => {
+    const isReady = langGraphManager && langGraphManager.initialized;
+    console.log('🔍 IPC: langgraph-is-ready called');
+    console.log('  - langGraphManager exists:', !!langGraphManager);
+    console.log('  - langGraphManager.initialized:', langGraphManager?.initialized);
+    console.log('  - returning:', isReady);
+    return isReady;
+});
+
+ipcMain.handle('langgraph-create-session', (event, type, userId) => {
+    if (!langGraphManager) {
+        console.warn('⚠️ LangGraph Manager not initialized');
+        return null;
+    }
+    
+    try {
+        const sessionId = langGraphManager.createSession(type, userId);
+        console.log(`🗣️ Created LangGraph session: ${sessionId} (type: ${type})`);
+        return sessionId;
+    } catch (error) {
+        console.error('❌ Error creating LangGraph session:', error);
+        return null;
+    }
+});
+
+ipcMain.handle('langgraph-execute-workflow', async (event, workflowName, input, sessionId, additionalContext) => {
+    if (!langGraphManager) {
+        throw new Error('LangGraph Manager not initialized');
+    }
+    
+    try {
+        console.log(`🔄 Executing LangGraph workflow: ${workflowName}`);
+        const result = await langGraphManager.executeWorkflow(workflowName, input, sessionId, additionalContext);
+        console.log(`✅ LangGraph workflow ${workflowName} completed`);
+        return result;
+    } catch (error) {
+        console.error(`❌ LangGraph workflow ${workflowName} failed:`, error);
+        throw error;
+    }
+});
+
+ipcMain.handle('langgraph-get-session', (event, sessionId) => {
+    if (!langGraphManager) {
+        return null;
+    }
+    
+    return langGraphManager.getSession(sessionId);
+});
+
+ipcMain.handle('langgraph-cleanup-sessions', (event, maxAgeHours) => {
+    if (!langGraphManager) {
+        return false;
+    }
+    
+    try {
+        langGraphManager.cleanupSessions(maxAgeHours);
+        return true;
+    } catch (error) {
+        console.error('❌ Error cleaning up LangGraph sessions:', error);
+        return false;
+    }
+});
+
+ipcMain.handle('langgraph-get-stats', () => {
+    if (!langGraphManager) {
+        return null;
+    }
+    
+    return langGraphManager.getSessionStats();
+});
+
+// Enhanced meal analysis using LangGraph
+ipcMain.handle('langgraph-analyze-meal', async (event, mealDescription, userProfile, recentMeals) => {
+    if (!langGraphManager) {
+        // Fallback to original OpenAI meal analysis
+        return await ipcMain.invoke('openai-analyze-meal', mealDescription);
+    }
+    
+    try {
+        const input = {
+            description: mealDescription,
+            userProfile: userProfile || {},
+            recentMeals: recentMeals || [],
+            goals: userProfile?.goals || {}
+        };
+        
+        const result = await langGraphManager.executeWorkflow('meal-analysis', input);
+        return result;
+    } catch (error) {
+        console.error('❌ LangGraph meal analysis failed, falling back to basic analysis:', error);
+        // Fallback to original method
+        return await ipcMain.invoke('openai-analyze-meal', mealDescription);
+    }
+});
+
+// Enhanced onboarding using LangGraph with progress tracking
+ipcMain.handle('langgraph-onboarding-chat', async (event, userMessage, conversationHistory, sessionId, progress) => {
+    if (!langGraphManager) {
+        // Fallback to original onboarding chat
+        return await ipcMain.invoke('openai-onboarding-chat', userMessage, conversationHistory);
+    }
+    
+    try {
+        if (!sessionId) {
+            sessionId = langGraphManager.createSession('onboarding');
+        }
+        
+        // Use progress information to guide the conversation with better data preservation
+        const existingData = progress?.collectedData || {};
+        const input = {
+            message: userMessage,
+            existingData: existingData,
+            step: progress?.step || 1,
+            maxSteps: progress?.maxSteps || 7,
+            forceStepByStep: true, // Ensure step-by-step progression
+            currentStep: progress?.step || 1,
+            preserveData: true // Flag to ensure data persistence
+        };
+        
+        console.log('🔍 Enhanced onboarding input with preserved data:', {
+            message: userMessage,
+            existingDataKeys: Object.keys(existingData),
+            existingData: existingData,
+            step: input.step
+        });
+        
+        console.log('🔍 Enhanced onboarding input:', input);
+        
+        const context = {
+            sessionId,
+            session: langGraphManager.getSession(sessionId),
+            progress: progress
+        };
+        
+        const result = await langGraphManager.executeWorkflow('onboarding', input, sessionId);
+        
+        // Ensure we don't complete too early
+        if (progress && progress.step < progress.maxSteps) {
+            result.complete = false;
+            result.isComplete = false;
+        }
+        
+        console.log('🔍 Enhanced onboarding result:', result);
+        
+        return {
+            ...result,
+            sessionId
+        };
+    } catch (error) {
+        console.error('❌ LangGraph onboarding failed, falling back to basic chat:', error);
+        // Fallback to original method
+        return await ipcMain.invoke('openai-onboarding-chat', userMessage, conversationHistory);
+    }
+});
+
+// Speech processing workflow
+ipcMain.handle('langgraph-process-speech', async (event, transcript, userProfile, sessionId) => {
+    if (!langGraphManager) {
+        throw new Error('LangGraph Manager not initialized');
+    }
+    
+    try {
+        const input = {
+            transcript,
+            userProfile: userProfile || {}
+        };
+        
+        const context = {
+            sessionId,
+            session: langGraphManager.getSession(sessionId)
+        };
+        
+        const result = await langGraphManager.executeWorkflow('speech-processing', input, sessionId);
+        return result;
+    } catch (error) {
+        console.error('❌ Speech processing workflow failed:', error);
+        throw error;
+    }
+});
+
+// Coaching workflow
+ipcMain.handle('langgraph-get-coaching', async (event, userMessage, userProfile, recentData, sessionId) => {
+    if (!langGraphManager) {
+        throw new Error('LangGraph Manager not initialized');
+    }
+    
+    try {
+        const input = {
+            message: userMessage || '',
+            userProfile: userProfile || {},
+            goals: userProfile?.goals || {},
+            type: 'general',
+            recentActivity: recentData || {}
+        };
+        
+        const context = {
+            sessionId,
+            session: langGraphManager.getSession(sessionId)
+        };
+        
+        console.log('🎯 Coaching input:', input);
+        const result = await langGraphManager.executeWorkflow('coaching', input, sessionId);
+        console.log('🎯 Coaching result:', result);
+        return result;
+    } catch (error) {
+        console.error('❌ Coaching workflow failed:', error);
+        throw error;
+    }
+});
+
+console.log('Fitly main process initialized with LangGraph support'); 

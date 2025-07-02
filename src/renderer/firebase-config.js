@@ -336,11 +336,21 @@ window.firebaseStorage = {
 };
 
 // Initialize Firebase when the script loads
-initializeFirebase().then(configured => {
-    console.log('🔐 Secure Firebase configuration loaded. Configured:', configured);
-}).catch(error => {
-    console.error('❌ Firebase initialization failed:', error);
+let firebaseInitialized = false;
+window.firebaseReady = new Promise((resolve) => {
+    initializeFirebase().then(configured => {
+        console.log('🔐 Secure Firebase configuration loaded. Configured:', configured);
+        firebaseInitialized = true;
+        resolve(configured);
+    }).catch(error => {
+        console.error('❌ Firebase initialization failed:', error);
+        firebaseInitialized = true; // Still resolve to allow app to continue with mock data
+        resolve(false);
+    });
 });
+
+// Add a synchronous check for Firebase readiness
+window.isFirebaseReady = () => firebaseInitialized;
 
 /*
 FIREBASE SETUP INSTRUCTIONS:

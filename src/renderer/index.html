@@ -591,6 +591,20 @@
                             <button type="button" class="secondary-btn" onclick="utils.testOpenAIConnection()">
                                 🔍 Test AI Connection
                             </button>
+                            <div class="preference-item" style="margin-top: 15px;">
+                                <label>AI Features Status</label>
+                                <span id="langGraphStatus" class="status-indicator">Checking...</span>
+                            </div>
+                            <button type="button" class="secondary-btn" onclick="utils.testAIConnection()">
+                                🧪 Test AI Connection
+                            </button>
+                            <div class="preference-item" style="margin-top: 15px;">
+                                <label>Speech Recognition</label>
+                                <span id="speechStatus" class="status-indicator">Checking...</span>
+                            </div>
+                            <button type="button" class="secondary-btn" onclick="utils.testSpeechRecognition()">
+                                🎤 Test Voice Features
+                            </button>
                         </div>
                     </div>
                     
@@ -622,6 +636,9 @@
             </div>
         </div>
 
+        <!-- Notification Area -->
+        <div id="notification-area" class="notification-area"></div>
+        
         <!-- Loading Spinner -->
         <div id="loadingSpinner" class="loading-spinner hidden">
             <div class="spinner"></div>
@@ -636,9 +653,15 @@
     <script src="https://www.gstatic.com/firebasejs/9.15.0/firebase-storage-compat.js"></script>
     
     <!-- Application Scripts -->
+    <!-- Load configuration and main app script -->
     <script src="firebase-config.js"></script>
     <script src="openai-config.js"></script>
     <script src="nutrition-data.js"></script>
+    
+    <!-- Load LangGraph components -->
+    <script src="../services/speech-service.js"></script>
+    <script src="langgraph-client.js"></script>
+    
     <script src="app.js"></script>
 </body>
 </html> 
