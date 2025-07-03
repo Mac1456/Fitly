@@ -98,7 +98,7 @@ const elements = {
     // Action buttons
     logMealBtn: document.getElementById('logMealBtn'),
     voiceLogBtn: document.getElementById('voiceLogBtn'),
-    photoMealBtn: document.getElementById('photoMealBtn'),
+
     updateWeightBtn: document.getElementById('updateWeightBtn'),
     
     // Modals
@@ -2328,15 +2328,7 @@ const dashboard = {
             console.log('⚠️ Voice log button element not found');
         }
         
-        if (elements.photoMealBtn) {
-            elements.photoMealBtn.addEventListener('click', () => {
-                console.log('📸 Photo meal button clicked');
-                meals.showPhotoUpload();
-            });
-            console.log('✅ Photo meal button listener added');
-        } else {
-            console.log('⚠️ Photo meal button element not found');
-        }
+
         
         if (elements.updateWeightBtn) {
             elements.updateWeightBtn.addEventListener('click', () => {
@@ -3196,11 +3188,7 @@ const meals = {
         }, 500);
     },
     
-    showPhotoUpload: () => {
-        console.log('📸 Photo upload not implemented yet');
-        utils.showNotification('Photo meal logging will be implemented soon!', 'info');
-        // TODO: Implement photo upload and analysis
-    },
+
     
     getPlaceholderNutrition: () => {
         return {
