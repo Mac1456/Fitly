@@ -108,6 +108,16 @@ const elements = {
     mealDescription: document.getElementById('mealDescription'),
     mealTime: document.getElementById('mealTime'),
     
+    // Voice Recording Modal Elements
+    voiceRecordingModal: document.getElementById('voiceRecordingModal'),
+    closeVoiceModal: document.getElementById('closeVoiceModal'),
+    recordingStatusText: document.getElementById('recordingStatusText'),
+    recordingTimer: document.getElementById('recordingTimer'),
+    finalTranscript: document.getElementById('finalTranscript'),
+    interimTranscript: document.getElementById('interimTranscript'),
+    stopRecordingBtn: document.getElementById('stopRecordingBtn'),
+    cancelRecordingBtn: document.getElementById('cancelRecordingBtn'),
+    
     // UI elements
     loadingSpinner: document.getElementById('loadingSpinner'),
     
@@ -152,6 +162,70 @@ const utils = {
         }
         appState.isLoading = show;
         console.log('🔍 Updated app state loading:', appState.isLoading);
+    },
+    
+    // Height utility functions
+    toggleHeightInputs: () => {
+        const heightUnit = document.getElementById('heightUnit');
+        const imperialHeight = document.getElementById('imperialHeight');
+        const metricHeight = document.getElementById('metricHeight');
+        
+        if (heightUnit && imperialHeight && metricHeight) {
+            const isImperial = heightUnit.value === 'imperial';
+            imperialHeight.style.display = isImperial ? 'flex' : 'none';
+            metricHeight.style.display = isImperial ? 'none' : 'flex';
+            
+            // Update required attributes
+            const heightFeet = document.getElementById('heightFeet');
+            const heightInches = document.getElementById('heightInches');
+            const heightCm = document.getElementById('heightCm');
+            
+            if (heightFeet) heightFeet.required = isImperial;
+            if (heightInches) heightInches.required = isImperial;
+            if (heightCm) heightCm.required = !isImperial;
+        }
+    },
+    
+    toggleUpdateHeightInputs: () => {
+        const heightUnit = document.getElementById('updateHeightUnit');
+        const imperialHeight = document.getElementById('updateImperialHeight');
+        const metricHeight = document.getElementById('updateMetricHeight');
+        
+        if (heightUnit && imperialHeight && metricHeight) {
+            const isImperial = heightUnit.value === 'imperial';
+            imperialHeight.style.display = isImperial ? 'flex' : 'none';
+            metricHeight.style.display = isImperial ? 'none' : 'flex';
+        }
+    },
+    
+    // Convert height to centimeters for calculations
+    convertHeightToCm: (heightData) => {
+        if (heightData.heightUnit === 'imperial') {
+            const totalInches = (heightData.heightFeet * 12) + heightData.heightInches;
+            return totalInches * 2.54;
+        } else {
+            return heightData.heightCm;
+        }
+    },
+    
+    // Convert height from old format to new format
+    convertLegacyHeight: (height, heightUnit) => {
+        if (heightUnit === 'ft') {
+            // Convert decimal feet to feet and inches
+            const feet = Math.floor(height);
+            const inches = Math.round((height - feet) * 12);
+            return {
+                heightUnit: 'imperial',
+                heightFeet: feet,
+                heightInches: inches
+            };
+        } else if (heightUnit === 'cm') {
+            return {
+                heightUnit: 'metric',
+                heightCm: Math.round(height)
+            };
+        }
+        return null;
     },
     
     switchScreen: (screenName) => {
@@ -282,8 +356,10 @@ const utils = {
                 updateAge: document.getElementById('updateAge'),
                 updateCurrentWeight: document.getElementById('updateCurrentWeight'),
                 updateWeightUnit: document.getElementById('updateWeightUnit'),
-                updateHeight: document.getElementById('updateHeight'),
                 updateHeightUnit: document.getElementById('updateHeightUnit'),
+                updateHeightFeet: document.getElementById('updateHeightFeet'),
+                updateHeightInches: document.getElementById('updateHeightInches'),
+                updateHeightCm: document.getElementById('updateHeightCm'),
                 updateGender: document.getElementById('updateGender'),
                 updateGoalWeight: document.getElementById('updateGoalWeight'),
                 updateActivityLevel: document.getElementById('updateActivityLevel'),
@@ -298,8 +374,41 @@ const utils = {
             if (elements.updateAge) elements.updateAge.value = profile.age || '';
             if (elements.updateCurrentWeight) elements.updateCurrentWeight.value = profile.currentWeight || '';
             if (elements.updateWeightUnit) elements.updateWeightUnit.value = profile.weightUnit || 'lbs';
-            if (elements.updateHeight) elements.updateHeight.value = profile.height || '';
-            if (elements.updateHeightUnit) elements.updateHeightUnit.value = profile.heightUnit || 'ft';
+            
+            // Handle height - support both old and new formats
+            if (profile.heightUnit === 'imperial' || profile.heightFeet !== undefined) {
+                // New format
+                if (elements.updateHeightUnit) elements.updateHeightUnit.value = 'imperial';
+                if (elements.updateHeightFeet) elements.updateHeightFeet.value = profile.heightFeet || '';
+                if (elements.updateHeightInches) elements.updateHeightInches.value = profile.heightInches || '';
+                if (elements.updateHeightCm) elements.updateHeightCm.value = '';
+            } else if (profile.heightUnit === 'metric' || profile.heightCm !== undefined) {
+                // New format
+                if (elements.updateHeightUnit) elements.updateHeightUnit.value = 'metric';
+                if (elements.updateHeightCm) elements.updateHeightCm.value = profile.heightCm || '';
+                if (elements.updateHeightFeet) elements.updateHeightFeet.value = '';
+                if (elements.updateHeightInches) elements.updateHeightInches.value = '';
+            } else if (profile.height !== undefined) {
+                // Legacy format - convert to new format
+                const convertedHeight = utils.convertLegacyHeight(profile.height, profile.heightUnit);
+                if (convertedHeight) {
+                    if (convertedHeight.heightUnit === 'imperial') {
+                        if (elements.updateHeightUnit) elements.updateHeightUnit.value = 'imperial';
+                        if (elements.updateHeightFeet) elements.updateHeightFeet.value = convertedHeight.heightFeet || '';
+                        if (elements.updateHeightInches) elements.updateHeightInches.value = convertedHeight.heightInches || '';
+                        if (elements.updateHeightCm) elements.updateHeightCm.value = '';
+                    } else {
+                        if (elements.updateHeightUnit) elements.updateHeightUnit.value = 'metric';
+                        if (elements.updateHeightCm) elements.updateHeightCm.value = convertedHeight.heightCm || '';
+                        if (elements.updateHeightFeet) elements.updateHeightFeet.value = '';
+                        if (elements.updateHeightInches) elements.updateHeightInches.value = '';
+                    }
+                }
+            }
+            
+            // Update height input visibility based on selection
+            utils.toggleUpdateHeightInputs();
+            
             if (elements.updateGender) elements.updateGender.value = profile.gender || '';
             
             // Goals tab
@@ -628,14 +737,32 @@ const utils = {
     
     updateProfile: async (formData) => {
         try {
+            const heightUnit = formData.get('heightUnit');
+            let heightData = {};
+            
+            if (heightUnit === 'imperial') {
+                heightData = {
+                    heightUnit: 'imperial',
+                    heightFeet: parseInt(formData.get('heightFeet')) || appState.userProfile.heightFeet,
+                    heightInches: parseInt(formData.get('heightInches')) || appState.userProfile.heightInches,
+                    heightCm: null
+                };
+            } else {
+                heightData = {
+                    heightUnit: 'metric',
+                    heightCm: parseInt(formData.get('heightCm')) || appState.userProfile.heightCm,
+                    heightFeet: null,
+                    heightInches: null
+                };
+            }
+            
             const updatedProfile = {
                 ...appState.userProfile,
                 userName: formData.get('userName'),
                 age: parseInt(formData.get('age')) || appState.userProfile.age,
                 currentWeight: parseFloat(formData.get('currentWeight')) || appState.userProfile.currentWeight,
                 weightUnit: formData.get('weightUnit') || appState.userProfile.weightUnit,
-                height: parseFloat(formData.get('height')) || appState.userProfile.height,
-                heightUnit: formData.get('heightUnit') || appState.userProfile.heightUnit,
+                ...heightData,
                 gender: formData.get('gender') || appState.userProfile.gender
             };
             
@@ -728,11 +855,25 @@ const utils = {
     calculateCalorieGoal: (userProfile) => {
         console.log('🔢 Calculating calorie goal for profile:', userProfile);
         // Basic BMR calculation using Mifflin-St Jeor equation
-        const { currentWeight, height, age, gender, activityLevel, weightUnit, heightUnit } = userProfile;
+        const { currentWeight, age, gender, activityLevel, weightUnit } = userProfile;
         
         // Convert to metric if needed
         let weightKg = weightUnit === 'kg' ? currentWeight : currentWeight * 0.453592;
-        let heightCm = heightUnit === 'cm' ? height : height * 30.48;
+        
+        // Get height in cm - support both old and new formats
+        let heightCm;
+        if (userProfile.heightUnit === 'imperial') {
+            const totalInches = (userProfile.heightFeet * 12) + userProfile.heightInches;
+            heightCm = totalInches * 2.54;
+        } else if (userProfile.heightUnit === 'metric') {
+            heightCm = userProfile.heightCm;
+        } else if (userProfile.height !== undefined) {
+            // Legacy format
+            heightCm = userProfile.heightUnit === 'cm' ? userProfile.height : userProfile.height * 30.48;
+        } else {
+            console.error('❌ No height data available for calorie calculation');
+            return 2000; // Default fallback
+        }
         
         // Calculate BMR
         let bmr;
@@ -1460,7 +1601,7 @@ const onboarding = {
             responseMessage = `Nice to meet you, ${userData.name}! How old are you?`;
         } else if (!userData.weight) {
             responseMessage = "What's your current weight? (You can say something like '150 lbs' or '68 kg')";
-        } else if (!userData.height) {
+        } else if (!userData.heightFeet && !userData.heightCm) {
             responseMessage = "What's your height? (You can say something like '5 feet 8 inches' or '170 cm')";
         } else if (!userData.gender) {
             responseMessage = "Are you male, female, or prefer not to specify?";
@@ -1510,11 +1651,12 @@ const onboarding = {
         if (heightFeetMatch) {
             const feet = parseInt(heightFeetMatch[1]);
             const inches = heightFeetMatch[2] ? parseInt(heightFeetMatch[2]) : 0;
-            userData.height = feet + (inches / 12); // Convert to decimal feet
-            userData.heightUnit = 'ft';
+            userData.heightFeet = feet;
+            userData.heightInches = inches;
+            userData.heightUnit = 'imperial';
         } else if (heightCmMatch) {
-            userData.height = parseInt(heightCmMatch[1]);
-            userData.heightUnit = 'cm';
+            userData.heightCm = parseInt(heightCmMatch[1]);
+            userData.heightUnit = 'metric';
         }
 
         // Extract gender
@@ -1548,13 +1690,18 @@ const onboarding = {
     },
 
     getMissingInfo: (userData) => {
-        const required = ['name', 'age', 'weight', 'height', 'gender', 'primaryGoal', 'activityLevel'];
+        const required = ['name', 'age', 'weight', 'gender', 'primaryGoal', 'activityLevel'];
         const missing = [];
 
         for (const field of required) {
             if (!userData[field]) {
                 missing.push(field);
             }
+        }
+
+        // Check height separately (can be either imperial or metric)
+        if (!userData.heightFeet && !userData.heightCm) {
+            missing.push('height');
         }
 
         // Special case: goal weight is only required for fat loss goals
@@ -1592,7 +1739,7 @@ const onboarding = {
             progress.step = 2; // Asking for age
         } else if (!userData.weight) {
             progress.step = 3; // Asking for weight
-        } else if (!userData.height) {
+        } else if (!userData.heightFeet && !userData.heightCm) {
             progress.step = 4; // Asking for height
         } else if (!userData.gender) {
             progress.step = 5; // Asking for gender
@@ -1780,12 +1927,30 @@ const onboarding = {
                 console.log(`  ${key}: ${value}`);
             }
             
+            const heightUnit = formData.get('heightUnit');
+            let heightData = {};
+            
+            if (heightUnit === 'imperial') {
+                heightData = {
+                    heightUnit: 'imperial',
+                    heightFeet: parseInt(formData.get('heightFeet')),
+                    heightInches: parseInt(formData.get('heightInches')),
+                    heightCm: null
+                };
+            } else {
+                heightData = {
+                    heightUnit: 'metric',
+                    heightCm: parseInt(formData.get('heightCm')),
+                    heightFeet: null,
+                    heightInches: null
+                };
+            }
+            
             const profileData = {
                 userName: formData.get('userName'),
                 currentWeight: parseFloat(formData.get('currentWeight')),
                 weightUnit: formData.get('weightUnit'),
-                height: parseFloat(formData.get('height')),
-                heightUnit: formData.get('heightUnit'),
+                ...heightData,
                 age: parseInt(formData.get('age')),
                 gender: formData.get('gender'),
                 goalWeight: formData.get('goalWeight') ? parseFloat(formData.get('goalWeight')) : null,
@@ -1798,8 +1963,19 @@ const onboarding = {
             console.log('📋 Profile data constructed:', profileData);
             
             // Validate required fields
-            const requiredFields = ['userName', 'currentWeight', 'height', 'age', 'gender', 'activityLevel', 'primaryGoal'];
+            const requiredFields = ['userName', 'currentWeight', 'age', 'gender', 'activityLevel', 'primaryGoal'];
             const missingFields = requiredFields.filter(field => !profileData[field]);
+            
+            // Check height separately based on unit
+            if (heightUnit === 'imperial') {
+                if (!profileData.heightFeet || profileData.heightInches === undefined) {
+                    missingFields.push('height');
+                }
+            } else {
+                if (!profileData.heightCm) {
+                    missingFields.push('height');
+                }
+            }
             
             if (missingFields.length > 0) {
                 console.error('❌ Missing required fields:', missingFields);
@@ -2322,6 +2498,33 @@ const dashboard = {
             default:
                 return 'Unknown';
         }
+    },
+    
+    // Refresh dashboard data and UI
+    refreshData: async () => {
+        console.log('🔄 Refreshing dashboard data...');
+        
+        try {
+            // Update UI with any profile changes
+            dashboard.updateUI();
+            console.log('✅ UI refreshed');
+            
+            // Reload today's data
+            await dashboard.loadTodaysData();
+            console.log('✅ Today\'s data reloaded');
+            
+            // Update nutrition display
+            dashboard.updateNutritionDisplay();
+            console.log('✅ Nutrition display updated');
+            
+            // Re-render meals list
+            dashboard.renderMealsList();
+            console.log('✅ Meals list re-rendered');
+            
+            console.log('✅ Dashboard refresh complete');
+        } catch (error) {
+            console.error('❌ Error refreshing dashboard:', error);
+        }
     }
 };
 
@@ -2479,124 +2682,518 @@ const meals = {
         }
     },
     
-    startVoiceLog: async () => {
-        console.log('🎤 Starting voice logging...');
-        console.log('🔍 Voice logging debug info:');
-        console.log('  - appState.langGraphReady:', appState.langGraphReady);
-        console.log('  - window.langGraphClient:', typeof window.langGraphClient);
-        console.log('  - window.SpeechService:', typeof window.SpeechService);
-        console.log('  - SpeechService.isSupported:', window.SpeechService ? window.SpeechService.isSupported() : 'N/A');
+    // Voice recording state and modal functions
+    isVoiceRecording: false,
+    currentRecordingPromise: null,
+    recordingState: 'ready', // 'ready', 'recording', 'paused', 'processing'
+    recordingStartTime: null,
+    recordingTimer: null,
+    finalTranscriptText: '',
+    currentTranscriptText: '',
+    
+    showVoiceRecordingModal: () => {
+        console.log('🎤 Showing voice recording modal...');
         
-        console.log('🔍 Detailed state check:');
-        if (window.langGraphClient) {
-            console.log('  - langGraphClient.isReady:', window.langGraphClient.isReady);
-            console.log('  - langGraphClient.ipcRenderer:', !!window.langGraphClient.ipcRenderer);
-            console.log('  - langGraphClient.speechService:', !!window.langGraphClient.speechService);
+        // Hide loading spinner when modal appears to prevent z-index conflicts
+        utils.showLoading(false);
+        
+        if (elements.voiceRecordingModal) {
+            elements.voiceRecordingModal.classList.add('active');
+            
+            // Reset modal state to initial 'ready' state
+            meals.recordingState = 'ready';
+            meals.finalTranscriptText = '';
+            meals.currentTranscriptText = '';
+            
+            // Reset UI elements
+            if (elements.finalTranscript) elements.finalTranscript.textContent = '';
+            if (elements.interimTranscript) elements.interimTranscript.textContent = '';
+            if (elements.recordingTimer) elements.recordingTimer.textContent = '0:00';
+            if (elements.recordingStatusText) elements.recordingStatusText.textContent = 'Ready to record';
+            
+            // Update button states
+            meals.updateRecordingUI();
+            
+            console.log('✅ Voice recording modal shown, loading spinner hidden');
+        } else {
+            console.error('❌ Voice recording modal not found');
+        }
+    },
+    
+    hideVoiceRecordingModal: () => {
+        console.log('🎤 Hiding voice recording modal...');
+        
+        if (elements.voiceRecordingModal) {
+            elements.voiceRecordingModal.classList.remove('active');
+            console.log('✅ Voice recording modal hidden');
         }
         
-        // Check if LangGraph speech capabilities are available
-        if (!appState.langGraphReady || !window.langGraphClient) {
-            console.log('⚠️ LangGraph not available, voice logging disabled');
-            console.log('🔍 LangGraph readiness details:');
-            console.log('  - appState.langGraphReady:', appState.langGraphReady);
-            console.log('  - window.langGraphClient exists:', !!window.langGraphClient);
-            if (window.langGraphClient) {
-                console.log('  - langGraphClient.isReady:', window.langGraphClient.isReady);
-                console.log('  - langGraphClient.speechService:', !!window.langGraphClient.speechService);
-            }
-            
-            // Let's also check if we can manually check the LangGraph status
-            if (window.langGraphClient && window.langGraphClient.checkReady) {
-                console.log('🔍 Manually checking LangGraph readiness...');
-                try {
-                    const manualCheck = await window.langGraphClient.checkReady();
-                    console.log('🔍 Manual readiness check result:', manualCheck);
-                    if (manualCheck && !appState.langGraphReady) {
-                        console.log('⚠️ Manual check passed but appState.langGraphReady is false - updating...');
-                        appState.langGraphReady = manualCheck;
-                    }
-                } catch (error) {
-                    console.error('❌ Manual readiness check failed:', error);
+        // Reset recording state
+        meals.isVoiceRecording = false;
+        meals.currentRecordingPromise = null;
+        meals.voiceCleanupDone = false; // Reset cleanup flag for next use
+        meals.recordingState = 'ready';
+        meals.finalTranscriptText = '';
+        meals.currentTranscriptText = '';
+        
+        // Clear timers
+        if (meals.recordingTimer) {
+            clearInterval(meals.recordingTimer);
+            meals.recordingTimer = null;
+        }
+        
+        // Stop any ongoing recording
+        if (window.langGraphClient && window.langGraphClient.stopVoiceLogging) {
+            window.langGraphClient.stopVoiceLogging();
+        }
+    },
+
+    updateRecordingUI: () => {
+        const recordingStatus = document.querySelector('.recording-status');
+        const pulseDot = document.getElementById('recordingPulseDot');
+        const statusText = document.getElementById('recordingStatusText');
+        const startStopBtn = document.getElementById('startStopRecordingBtn');
+        const startStopIcon = document.getElementById('startStopIcon');
+        const startStopText = document.getElementById('startStopText');
+        const saveBtn = document.getElementById('saveRecordingBtn');
+        
+        // Remove all state classes
+        if (recordingStatus) {
+            recordingStatus.classList.remove('ready', 'recording', 'paused', 'processing');
+            recordingStatus.classList.add(meals.recordingState);
+        }
+        
+        if (pulseDot) {
+            pulseDot.classList.remove('ready', 'recording', 'paused', 'processing');
+            pulseDot.classList.add(meals.recordingState);
+        }
+        
+        if (startStopBtn) {
+            startStopBtn.classList.remove('recording', 'paused');
+        }
+        
+        // Update UI based on current state
+        switch (meals.recordingState) {
+            case 'ready':
+                if (statusText) statusText.textContent = 'Ready to record';
+                if (startStopIcon) startStopIcon.textContent = '🎙️';
+                if (startStopText) startStopText.textContent = 'Start Recording';
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.style.opacity = '0.6';
                 }
-            }
-            
-            if (!appState.langGraphReady || !window.langGraphClient) {
-                utils.showNotification('Voice logging requires enhanced AI features. Please ensure LangGraph is configured!', 'info');
-                return;
-            }
+                break;
+                
+            case 'recording':
+                if (statusText) statusText.textContent = 'Recording...';
+                if (startStopIcon) startStopIcon.textContent = '⏸️';
+                if (startStopText) startStopText.textContent = 'Pause';
+                if (startStopBtn) startStopBtn.classList.add('recording');
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.style.opacity = '1';
+                }
+                break;
+                
+            case 'paused':
+                if (statusText) statusText.textContent = 'Paused - Click to resume';
+                if (startStopIcon) startStopIcon.textContent = '▶️';
+                if (startStopText) startStopText.textContent = 'Resume';
+                if (startStopBtn) startStopBtn.classList.add('paused');
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.style.opacity = '1';
+                }
+                break;
+                
+            case 'processing':
+                if (statusText) statusText.textContent = 'Processing...';
+                if (startStopIcon) startStopIcon.textContent = '⏳';
+                if (startStopText) startStopText.textContent = 'Processing';
+                if (startStopBtn) startStopBtn.disabled = true;
+                if (saveBtn) {
+                    saveBtn.disabled = true;
+                    saveBtn.style.opacity = '0.6';
+                }
+                break;
         }
+    },
+    
+    toggleRecording: async () => {
+        console.log('🎤 Toggle recording called, current state:', meals.recordingState);
+        
+        switch (meals.recordingState) {
+            case 'ready':
+                await meals.startRecording();
+                break;
+            case 'recording':
+                meals.pauseRecording();
+                break;
+            case 'paused':
+                await meals.resumeRecording();
+                break;
+            default:
+                console.log('⚠️ Cannot toggle recording from state:', meals.recordingState);
+        }
+    },
+
+    startRecording: async () => {
+        console.log('🎤 Starting recording...');
         
         // Check if speech service is available
         if (!window.SpeechService || !window.SpeechService.isSupported()) {
-            console.log('⚠️ Speech recognition not supported');
-            console.log('🔍 Speech service details:');
-            console.log('  - window.SpeechService exists:', !!window.SpeechService);
-            console.log('  - SpeechService.isSupported():', window.SpeechService ? window.SpeechService.isSupported() : 'N/A');
+            console.error('❌ Speech recognition not supported');
             utils.showNotification('Speech recognition is not supported in this browser!', 'error');
             return;
         }
         
         try {
-            console.log('✅ All checks passed, starting voice logging...');
-            console.log('🔍 About to call langGraphClient.startVoiceLogging with profile:', appState.userProfile);
+            meals.recordingState = 'recording';
+            meals.recordingStartTime = Date.now();
+            meals.updateRecordingUI();
             
-            // Show loading state
-            utils.showLoading(true, 'Listening for voice input...');
+            // Start recording timer
+            meals.startRecordingTimer();
             
-            // Use LangGraph client for voice logging
-            const result = await window.langGraphClient.startVoiceLogging(appState.userProfile);
-            
-            console.log('🎤 Voice logging result:', result);
-            
-            // Process the results
-            if (result.processingResult) {
-                const { intentType, extractedData, message } = result.processingResult;
-                
-                // Show user what was understood
-                utils.showNotification(`Understood: "${result.transcript}"`, 'info');
-                
-                // Process based on intent type
-                if (intentType === 'meal' && extractedData) {
-                    // Automatically log the meal
-                    const mealData = {
-                        description: extractedData.description,
-                        timestamp: new Date().toISOString(),
-                        mealTime: extractedData.mealTime || 'other',
-                        nutrition: extractedData.nutrition || meals.getPlaceholderNutrition(),
-                        source: 'voice_log'
-                    };
-                    
-                    // Save to Firebase
-                    if (appState.currentUser) {
-                        await window.firebaseDB.addMealLog(appState.currentUser.uid, mealData);
-                        
-                        // Update local state
-                        appState.todaysMeals.push(mealData);
-                        dashboard.calculateDailyNutrition();
-                        dashboard.updateNutritionDisplay();
-                        dashboard.renderMealsList();
-                        
-                        utils.showNotification('Meal logged successfully via voice!', 'success');
+            // Set up speech recognition callbacks
+            const voiceLoggingOptions = {
+                onStart: () => {
+                    console.log('🎤 Voice recording started');
+                },
+                onTimer: (timeString) => {
+                    // Timer is handled by our own timer function
+                },
+                onInterimTranscript: (transcript) => {
+                    meals.currentTranscriptText = transcript;
+                    if (elements.interimTranscript) {
+                        elements.interimTranscript.textContent = transcript;
                     }
-                } else if (intentType === 'activity' && extractedData) {
-                    // Log activity
-                    utils.showNotification(`Activity logged: ${extractedData.description}`, 'success');
-                } else if (intentType === 'weight' && extractedData) {
-                    // Log weight
-                    utils.showNotification(`Weight logged: ${extractedData.weight} ${extractedData.unit}`, 'success');
-                } else {
-                    // General response
-                    utils.showNotification(message || 'Voice input processed successfully!', 'info');
+                },
+                onFinalTranscript: (transcript) => {
+                    meals.finalTranscriptText = transcript;
+                    if (elements.finalTranscript) {
+                        elements.finalTranscript.textContent = transcript;
+                    }
+                    if (elements.interimTranscript) {
+                        elements.interimTranscript.textContent = '';
+                    }
+                },
+                onEnd: () => {
+                    console.log('🎤 Voice recording ended');
+                },
+                onError: (error) => {
+                    console.error('🎤 Voice recording error:', error);
+                    meals.recordingState = 'ready';
+                    meals.updateRecordingUI();
+                    utils.showNotification('Voice recording error: ' + error, 'error');
+                }
+            };
+            
+            // Start speech recognition
+            meals.currentRecordingPromise = window.langGraphClient.startVoiceLogging(appState.userProfile, voiceLoggingOptions);
+            
+        } catch (error) {
+            console.error('❌ Failed to start recording:', error);
+            meals.recordingState = 'ready';
+            meals.updateRecordingUI();
+            utils.showNotification('Failed to start recording: ' + error.message, 'error');
+        }
+    },
+
+    pauseRecording: () => {
+        console.log('🎤 Pausing recording...');
+        
+        meals.recordingState = 'paused';
+        meals.updateRecordingUI();
+        
+        // Stop recording timer
+        if (meals.recordingTimer) {
+            clearInterval(meals.recordingTimer);
+            meals.recordingTimer = null;
+        }
+        
+        // Stop speech recognition
+        if (window.langGraphClient && window.langGraphClient.stopVoiceLogging) {
+            window.langGraphClient.stopVoiceLogging();
+        }
+    },
+
+    resumeRecording: async () => {
+        console.log('🎤 Resuming recording...');
+        
+        meals.recordingState = 'recording';
+        meals.updateRecordingUI();
+        
+        // Resume recording timer
+        meals.startRecordingTimer();
+        
+        // Resume speech recognition
+        try {
+            const voiceLoggingOptions = {
+                onStart: () => {
+                    console.log('🎤 Voice recording resumed');
+                },
+                onInterimTranscript: (transcript) => {
+                    meals.currentTranscriptText = transcript;
+                    if (elements.interimTranscript) {
+                        elements.interimTranscript.textContent = transcript;
+                    }
+                },
+                onFinalTranscript: (transcript) => {
+                    meals.finalTranscriptText = transcript;
+                    if (elements.finalTranscript) {
+                        elements.finalTranscript.textContent = transcript;
+                    }
+                    if (elements.interimTranscript) {
+                        elements.interimTranscript.textContent = '';
+                    }
+                },
+                onEnd: () => {
+                    console.log('🎤 Voice recording ended');
+                },
+                onError: (error) => {
+                    console.error('🎤 Voice recording error:', error);
+                    meals.recordingState = 'ready';
+                    meals.updateRecordingUI();
+                    utils.showNotification('Voice recording error: ' + error, 'error');
+                }
+            };
+            
+            meals.currentRecordingPromise = window.langGraphClient.startVoiceLogging(appState.userProfile, voiceLoggingOptions);
+            
+        } catch (error) {
+            console.error('❌ Failed to resume recording:', error);
+            meals.recordingState = 'ready';
+            meals.updateRecordingUI();
+            utils.showNotification('Failed to resume recording: ' + error.message, 'error');
+        }
+    },
+
+    startRecordingTimer: () => {
+        meals.recordingTimer = setInterval(() => {
+            if (meals.recordingStartTime) {
+                const elapsed = Date.now() - meals.recordingStartTime;
+                const minutes = Math.floor(elapsed / 60000);
+                const seconds = Math.floor((elapsed % 60000) / 1000);
+                const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                
+                if (elements.recordingTimer) {
+                    elements.recordingTimer.textContent = timeString;
+                }
+            }
+        }, 1000);
+    },
+
+    saveRecording: async () => {
+        console.log('🎤 Saving recording...');
+        
+        const transcript = meals.finalTranscriptText || meals.currentTranscriptText;
+        
+        if (!transcript || transcript.trim() === '') {
+            utils.showNotification('No speech was recorded to save!', 'warning');
+            return;
+        }
+        
+        meals.recordingState = 'processing';
+        meals.updateRecordingUI();
+        
+        try {
+            // Stop any ongoing recording
+            if (meals.recordingTimer) {
+                clearInterval(meals.recordingTimer);
+                meals.recordingTimer = null;
+            }
+            
+            if (window.langGraphClient && window.langGraphClient.stopVoiceLogging) {
+                window.langGraphClient.stopVoiceLogging();
+            }
+            
+            // Process the transcript
+            const result = {
+                transcript: transcript,
+                processingResult: { success: true, data: {} }
+            };
+            
+            // Process the meal using the existing logic
+            await meals.processSavedRecording(result);
+            
+        } catch (error) {
+            console.error('❌ Failed to save recording:', error);
+            meals.recordingState = 'ready';
+            meals.updateRecordingUI();
+            utils.showNotification('Failed to save recording: ' + error.message, 'error');
+        }
+    },
+
+    processSavedRecording: async (result) => {
+        console.log('🎤 Processing saved recording:', result);
+        
+        // Hide modal
+        meals.hideVoiceRecordingModal();
+        
+        if (result && result.transcript) {
+            console.log('✅ Voice transcript received:', result.transcript);
+            
+            // Show success notification
+            utils.showNotification(`Voice logged: "${result.transcript}"`, 'success');
+            
+            // Process the meal description with existing logic
+            const mealData = result.processingResult?.data || {};
+            
+            // Process the transcript with AI first
+            let finalNutrition = null;
+            let source = 'voice';
+            
+            // Try AI analysis - Enhanced LangGraph first, then basic OpenAI
+            if (appState.langGraphReady && window.langGraphClient) {
+                try {
+                    console.log('🚀 Analyzing voice transcript with enhanced AI...');
+                    const mealAnalysisResult = await window.langGraphClient.analyzeMeal(
+                        result.transcript,
+                        appState.userProfile
+                    );
+                    
+                    if (mealAnalysisResult && mealAnalysisResult.nutrition) {
+                        finalNutrition = mealAnalysisResult.nutrition;
+                        source = 'ai';
+                        console.log('✅ Voice transcript analyzed by AI:', finalNutrition);
+                        utils.showNotification('Voice meal analyzed by AI! 🚀', 'success');
+                    } else {
+                        throw new Error('Enhanced AI analysis failed');
+                    }
+                } catch (error) {
+                    console.error('❌ Enhanced AI analysis failed, trying basic AI:', error);
+                    
+                    // Fallback to basic OpenAI
+                    if (await window.openaiAPI?.isConfigured()) {
+                        try {
+                            const aiNutrition = await window.openaiAPI.analyzeMeal(result.transcript);
+                            if (aiNutrition) {
+                                finalNutrition = aiNutrition;
+                                source = 'ai';
+                                console.log('✅ Voice transcript analyzed by basic AI:', finalNutrition);
+                                utils.showNotification('Voice meal analyzed by AI! 🤖', 'success');
+                            } else {
+                                throw new Error('Basic AI analysis failed');
+                            }
+                        } catch (basicError) {
+                            console.error('❌ Basic AI analysis also failed:', basicError);
+                            finalNutrition = meals.getPlaceholderNutrition();
+                            utils.showNotification('AI analysis failed, using estimate.', 'info');
+                        }
+                    } else {
+                        finalNutrition = meals.getPlaceholderNutrition();
+                        utils.showNotification('No AI available, using estimate.', 'info');
+                    }
+                }
+            } else if (await window.openaiAPI?.isConfigured()) {
+                // No LangGraph, try basic OpenAI
+                try {
+                    const aiNutrition = await window.openaiAPI.analyzeMeal(result.transcript);
+                    if (aiNutrition) {
+                        finalNutrition = aiNutrition;
+                        source = 'ai';
+                        console.log('✅ Voice transcript analyzed by basic AI:', finalNutrition);
+                        utils.showNotification('Voice meal analyzed by AI! 🤖', 'success');
+                    } else {
+                        throw new Error('AI analysis failed');
+                    }
+                } catch (error) {
+                    console.error('❌ AI analysis failed:', error);
+                    finalNutrition = meals.getPlaceholderNutrition();
+                    utils.showNotification('AI analysis failed, using estimate.', 'info');
+                }
+            } else {
+                finalNutrition = meals.getPlaceholderNutrition();
+                utils.showNotification('Voice logged with estimate. Add OpenAI API key for better analysis!', 'info');
+            }
+            
+            const meal = {
+                id: Date.now(),
+                description: result.transcript,
+                date: new Date(),
+                nutrition: finalNutrition,
+                source: source,
+                confidence: finalNutrition.confidence || 'medium'
+            };
+            
+            // Save to Firebase
+            if (appState.currentUser) {
+                try {
+                    await window.firebaseDB.addMealLog(appState.currentUser.uid, meal);
+                    console.log('✅ Meal saved to Firebase');
+                } catch (firebaseError) {
+                    console.error('⚠️ Firebase save failed:', firebaseError);
                 }
             }
             
-        } catch (error) {
-            console.error('❌ Voice logging error:', error);
-            console.error('❌ Error details:', error.stack);
-            utils.showNotification(`Voice logging failed: ${error.message}`, 'error');
-        } finally {
-            utils.showLoading(false);
+            // Update local state
+            appState.todaysMeals.push(meal);
+            dashboard.calculateDailyNutrition();
+            dashboard.updateNutritionDisplay();
+            dashboard.renderMealsList(); // Refresh the meals display
+            
+            utils.showNotification('Meal logged successfully!', 'success');
+        } else {
+            console.warn('⚠️ No transcript received from recording');
+            utils.showNotification('No speech was detected in the recording.', 'warning');
         }
+    },
+
+    cancelRecording: () => {
+        console.log('🎤 Cancelling recording...');
+        
+        // Stop any ongoing recording
+        if (meals.recordingTimer) {
+            clearInterval(meals.recordingTimer);
+            meals.recordingTimer = null;
+        }
+        
+        if (window.langGraphClient && window.langGraphClient.stopVoiceLogging) {
+            window.langGraphClient.stopVoiceLogging();
+        }
+        
+        // Hide modal without saving
+        meals.hideVoiceRecordingModal();
+        
+        utils.showNotification('Recording cancelled', 'info');
+    },
+
+    startVoiceLog: async () => {
+        console.log('🎤 Opening voice logging modal...');
+        
+        // Check if LangGraph speech capabilities are available
+        if (!appState.langGraphReady || !window.langGraphClient) {
+            console.log('⚠️ LangGraph not available, voice logging disabled');
+            utils.showNotification('Voice logging requires enhanced AI features. Please ensure LangGraph is configured!', 'info');
+            return;
+        }
+        
+        // Check if speech service is available
+        if (!window.SpeechService || !window.SpeechService.isSupported()) {
+            console.log('⚠️ Speech recognition not supported');
+            utils.showNotification('Speech recognition is not supported in this browser!', 'error');
+            return;
+        }
+        
+        // Show the voice recording modal (ready state)
+        meals.showVoiceRecordingModal();
+        
+        console.log('✅ Voice recording modal opened - ready to record');
+    },
+
+
+    
+    showManualMealInput: () => {
+        console.log('📝 Showing manual meal input as speech alternative...');
+        
+        // Show the regular meal modal but with a note about it being an alternative to voice
+        meals.showMealModal();
+        
+        // Add a helpful message
+        setTimeout(() => {
+            utils.showNotification('Type your meal description in the text area below', 'info');
+        }, 500);
     },
     
     showPhotoUpload: () => {
@@ -3205,6 +3802,10 @@ window.aiAssistant = aiAssistant;
 window.utils = utils;
 window.dashboard = dashboard;
 
+// Make height toggle functions globally accessible for HTML onchange events
+window.toggleHeightInputs = utils.toggleHeightInputs;
+window.toggleUpdateHeightInputs = utils.toggleUpdateHeightInputs;
+
 // Global event listeners that need to be available regardless of current screen
 const setupGlobalEventListeners = () => {
     console.log('🌐 Setting up global event listeners...');
@@ -3292,6 +3893,45 @@ const setupGlobalEventListeners = () => {
         voiceLogBtn.addEventListener('click', () => {
             if (window.aiAssistant && window.aiAssistant.startVoiceLogging) {
                 window.aiAssistant.startVoiceLogging();
+            }
+        });
+    }
+    
+    // Voice recording modal event listeners
+    const closeVoiceModal = document.getElementById('closeVoiceModal');
+    if (closeVoiceModal) {
+        closeVoiceModal.addEventListener('click', () => {
+            meals.hideVoiceRecordingModal();
+        });
+    }
+    
+    const startStopRecordingBtn = document.getElementById('startStopRecordingBtn');
+    if (startStopRecordingBtn) {
+        startStopRecordingBtn.addEventListener('click', () => {
+            meals.toggleRecording();
+        });
+    }
+    
+    const saveRecordingBtn = document.getElementById('saveRecordingBtn');
+    if (saveRecordingBtn) {
+        saveRecordingBtn.addEventListener('click', () => {
+            meals.saveRecording();
+        });
+    }
+    
+    const cancelRecordingBtn = document.getElementById('cancelRecordingBtn');
+    if (cancelRecordingBtn) {
+        cancelRecordingBtn.addEventListener('click', () => {
+            meals.cancelRecording();
+        });
+    }
+    
+    // Voice recording modal background click to close
+    const voiceRecordingModal = document.getElementById('voiceRecordingModal');
+    if (voiceRecordingModal) {
+        voiceRecordingModal.addEventListener('click', (e) => {
+            if (e.target === voiceRecordingModal) {
+                meals.hideVoiceRecordingModal();
             }
         });
     }

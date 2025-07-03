@@ -155,12 +155,29 @@
 
                             <div class="form-group">
                                 <label for="height">Height</label>
-                                <div class="input-with-unit">
-                                    <input type="number" id="height" name="height" placeholder="5.8" step="0.1" required>
-                                    <select id="heightUnit" name="heightUnit">
-                                        <option value="ft">ft</option>
-                                        <option value="cm">cm</option>
+                                <div class="height-input-group">
+                                    <select id="heightUnit" name="heightUnit" onchange="toggleHeightInputs()">
+                                        <option value="imperial">Feet & Inches</option>
+                                        <option value="metric">Centimeters</option>
                                     </select>
+                                    <div class="height-inputs">
+                                        <div class="imperial-height" id="imperialHeight">
+                                            <div class="input-with-unit">
+                                                <input type="number" id="heightFeet" name="heightFeet" placeholder="5" min="3" max="8" required>
+                                                <span class="unit-label">ft</span>
+                                            </div>
+                                            <div class="input-with-unit">
+                                                <input type="number" id="heightInches" name="heightInches" placeholder="10" min="0" max="11" required>
+                                                <span class="unit-label">in</span>
+                                            </div>
+                                        </div>
+                                        <div class="metric-height" id="metricHeight" style="display: none;">
+                                            <div class="input-with-unit">
+                                                <input type="number" id="heightCm" name="heightCm" placeholder="170" min="120" max="250">
+                                                <span class="unit-label">cm</span>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -445,6 +462,53 @@
             </div>
         </div>
 
+        <!-- Voice Recording Modal -->
+        <div id="voiceRecordingModal" class="modal">
+            <div class="modal-content voice-modal">
+                <div class="modal-header">
+                    <h3>🎤 Voice Recording</h3>
+                    <button class="close-btn" id="closeVoiceModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="recording-status">
+                        <div class="recording-indicator">
+                            <div class="pulse-dot" id="recordingPulseDot"></div>
+                            <span id="recordingStatusText">Ready to record</span>
+                        </div>
+                        <div class="recording-timer" id="recordingTimer">0:00</div>
+                    </div>
+                    
+                    <div class="transcription-container">
+                        <div class="transcription-label">What you're saying:</div>
+                        <div class="transcription-text">
+                            <div id="finalTranscript" class="final-transcript"></div>
+                            <div id="interimTranscript" class="interim-transcript"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="recording-controls">
+                        <button class="recording-btn start-btn" id="startStopRecordingBtn">
+                            <span class="btn-icon" id="startStopIcon">🎙️</span>
+                            <span id="startStopText">Start Recording</span>
+                        </button>
+                        <button class="recording-btn save-btn" id="saveRecordingBtn" disabled>
+                            <span class="btn-icon">💾</span>
+                            Save
+                        </button>
+                        <button class="recording-btn cancel-btn" id="cancelRecordingBtn">
+                            <span class="btn-icon">❌</span>
+                            Cancel
+                        </button>
+                    </div>
+                    
+                    <div class="recording-help">
+                        <p>💡 Speak clearly and describe your meal. For example:</p>
+                        <p class="help-example">"I had a chicken caesar salad with grilled chicken breast, romaine lettuce, parmesan cheese, and caesar dressing"</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Profile Settings Modal -->
         <div id="profileModal" class="modal">
             <div class="modal-content large-modal">
@@ -487,12 +551,29 @@
                                 </div>
                                 <div class="form-group">
                                     <label for="updateHeight">Height</label>
-                                    <div class="input-with-unit">
-                                        <input type="number" id="updateHeight" name="height" placeholder="5.8" step="0.1">
-                                        <select id="updateHeightUnit" name="heightUnit">
-                                            <option value="ft">ft</option>
-                                            <option value="cm">cm</option>
+                                    <div class="height-input-group">
+                                        <select id="updateHeightUnit" name="heightUnit" onchange="toggleUpdateHeightInputs()">
+                                            <option value="imperial">Feet & Inches</option>
+                                            <option value="metric">Centimeters</option>
                                         </select>
+                                        <div class="height-inputs">
+                                            <div class="imperial-height" id="updateImperialHeight">
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="updateHeightFeet" name="heightFeet" placeholder="5" min="3" max="8">
+                                                    <span class="unit-label">ft</span>
+                                                </div>
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="updateHeightInches" name="heightInches" placeholder="10" min="0" max="11">
+                                                    <span class="unit-label">in</span>
+                                                </div>
+                                            </div>
+                                            <div class="metric-height" id="updateMetricHeight" style="display: none;">
+                                                <div class="input-with-unit">
+                                                    <input type="number" id="updateHeightCm" name="heightCm" placeholder="170" min="120" max="250">
+                                                    <span class="unit-label">cm</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -663,5 +744,21 @@
     <script src="langgraph-client.js"></script>
     
     <script src="app.js"></script>
+    <script>
+        // Initialize height inputs on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            // Initialize the onboarding form height inputs
+            const heightUnitSelect = document.getElementById('heightUnit');
+            if (heightUnitSelect) {
+                toggleHeightInputs(); // Initialize the display
+            }
+            
+            // Initialize the profile update form height inputs
+            const updateHeightUnitSelect = document.getElementById('updateHeightUnit');
+            if (updateHeightUnitSelect) {
+                toggleUpdateHeightInputs(); // Initialize the display
+            }
+        });
+    </script>
 </body>
 </html> 

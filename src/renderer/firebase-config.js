@@ -236,6 +236,22 @@ window.firebaseDB = {
         }
     },
     
+    // Update user profile
+    updateUserProfile: async (userId, profileData) => {
+        try {
+            console.log('Updating user profile:', userId, profileData);
+            const updateData = {
+                ...profileData,
+                updatedAt: firebase.firestore?.FieldValue?.serverTimestamp() || new Date()
+            };
+            await db.collection('users').doc(userId).set(updateData, { merge: true });
+            console.log('✅ User profile updated successfully');
+        } catch (error) {
+            console.error('❌ Error updating user profile:', error);
+            throw error;
+        }
+    },
+    
     // Add meal log entry
     addMealLog: async (userId, mealData) => {
         try {

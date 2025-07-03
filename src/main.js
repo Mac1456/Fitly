@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, systemPreferences } = require('electron');
 const path = require('path');
 const https = require('https');
 const fs = require('fs');
@@ -23,11 +23,41 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      enableRemoteModule: true
+      enableRemoteModule: true,
+      webSecurity: false, // Disable web security to allow speech API
+      allowRunningInsecureContent: true, // Allow speech recognition
+      experimentalFeatures: true // Enable experimental web features
     },
     icon: path.join(__dirname, 'assets', 'icon.png'), // We'll add an icon later
     titleBarStyle: 'default',
     show: false // Don't show until ready
+  });
+
+  // Handle permission requests for speech recognition
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    console.log('🔐 Permission request:', permission);
+    
+    // Allow microphone access for speech recognition
+    if (permission === 'microphone' || permission === 'media') {
+      console.log('✅ Granting microphone permission for speech recognition');
+      callback(true);
+    } else {
+      console.log('❌ Denying permission:', permission);
+      callback(false);
+    }
+  });
+
+  // Set permission check handler
+  mainWindow.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+    console.log('🔍 Permission check:', permission, 'from:', requestingOrigin);
+    
+    // Allow microphone access
+    if (permission === 'microphone' || permission === 'media') {
+      console.log('✅ Allowing microphone permission');
+      return true;
+    }
+    
+    return false;
   });
 
   // Load the main UI
@@ -51,9 +81,39 @@ function createWindow() {
   });
 }
 
+// Request microphone permission (macOS)
+async function requestMicrophonePermission() {
+  if (process.platform === 'darwin') {
+    try {
+      const microphoneStatus = systemPreferences.getMediaAccessStatus('microphone');
+      console.log('🎤 Current microphone status:', microphoneStatus);
+      
+      if (microphoneStatus !== 'granted') {
+        console.log('🎤 Requesting microphone permission...');
+        const granted = await systemPreferences.askForMediaAccess('microphone');
+        console.log('🎤 Microphone permission granted:', granted);
+        return granted;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Error requesting microphone permission:', error);
+      return false;
+    }
+  }
+  
+  // On Windows/Linux, assume permission is available
+  console.log('🎤 Platform:', process.platform, '- assuming microphone access available');
+  return true;
+}
+
 // App event handlers
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   console.log('Electron app ready, creating window...');
+  
+  // Request microphone permission before creating window
+  await requestMicrophonePermission();
+  
   createWindow();
 
   app.on('activate', () => {

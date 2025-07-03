@@ -37,13 +37,19 @@ class LangGraphClient {
             if (window.SpeechService) {
                 console.log('  - SpeechService.isSupported():', window.SpeechService.isSupported());
                 
-                if (window.SpeechService.isSupported()) {
-                    console.log('🔍 Initializing speech service...');
-                    this.speechService = new window.SpeechService();
-                    const speechInitResult = this.speechService.initialize();
-                    console.log('🎤 Speech service initialized:', speechInitResult);
-                } else {
-                    console.log('⚠️ Speech service not supported in this browser');
+                // Always create speech service instance and let it try both Web Speech API and native
+                console.log('🔍 Creating speech service instance...');
+                this.speechService = new window.SpeechService();
+                console.log('🔍 Speech service instance created, calling initialize...');
+                const speechInitResult = this.speechService.initialize();
+                console.log('🎤 Speech service initialization result:', speechInitResult);
+                console.log('🎤 Final speech service state:');
+                console.log('  - isSupported:', this.speechService.isSupported);
+                console.log('  - useNative:', this.speechService.useNative);
+                console.log('  - nativeService exists:', !!this.speechService.nativeService);
+                
+                if (!speechInitResult) {
+                    console.log('⚠️ Speech service initialization failed - will use manual input fallback');
                 }
             } else {
                 console.log('⚠️ SpeechService class not found');
@@ -217,9 +223,9 @@ class LangGraphClient {
     }
 
     /**
-     * Voice logging with speech recognition
+     * Voice logging with speech recognition and visual feedback
      */
-    async startVoiceLogging(userProfile = null) {
+    async startVoiceLogging(userProfile = null, options = {}) {
         console.log('🎤 Starting voice logging - detailed debug:');
         console.log('  - speechService exists:', !!this.speechService);
         console.log('  - LangGraph ready:', this.isReady);
@@ -229,11 +235,19 @@ class LangGraphClient {
             throw new Error('Speech service not available');
         }
 
-        const isSupported = this.speechService.isSupported();
+        const isSupported = this.speechService.isSupported;
         console.log('  - Speech supported:', isSupported);
+        console.log('  - Speech service useNative:', this.speechService.useNative);
+        console.log('  - Speech service isElectron:', this.speechService.isElectron);
+        console.log('  - Speech service nativeService exists:', !!this.speechService.nativeService);
         
         if (!isSupported) {
             console.error('❌ Speech recognition not supported');
+            console.error('🔍 Speech service debug info:');
+            console.error('  - isSupported:', this.speechService.isSupported);
+            console.error('  - useNative:', this.speechService.useNative);
+            console.error('  - isElectron:', this.speechService.isElectron);
+            console.error('  - nativeService exists:', !!this.speechService.nativeService);
             throw new Error('Speech recognition not supported in this browser');
         }
 
@@ -246,59 +260,124 @@ class LangGraphClient {
             let sessionId = null;
             let hasResolved = false; // Prevent multiple resolutions
             let timeoutId = null;
+            let finalTranscript = '';
+            let lastInterimTranscript = '';
+            let anyTranscriptReceived = false;
+            let startTime = Date.now();
+            let timerInterval = null;
 
             console.log('🎤 Setting up voice logging handlers...');
 
+            // Set up timer for recording duration
+            if (options.onTimer) {
+                timerInterval = setInterval(() => {
+                    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                    const minutes = Math.floor(elapsed / 60);
+                    const seconds = elapsed % 60;
+                    options.onTimer(`${minutes}:${seconds.toString().padStart(2, '0')}`);
+                }, 1000);
+            }
+
+            // Extended timeout for better UX
             timeoutId = setTimeout(() => {
                 if (!hasResolved) {
                     hasResolved = true;
                     console.error('❌ Voice logging timeout');
-                    reject(new Error('Voice logging timed out - no speech detected'));
+                    
+                    if (timerInterval) clearInterval(timerInterval);
+                    
+                    // Determine what transcript to use on timeout
+                    let transcriptToProcess = '';
+                    
+                    if (finalTranscript.trim()) {
+                        transcriptToProcess = finalTranscript.trim();
+                        console.log('🎤 Processing final transcript on timeout:', transcriptToProcess);
+                    } else if (lastInterimTranscript.trim() && lastInterimTranscript.trim().length > 2) {
+                        transcriptToProcess = lastInterimTranscript.trim();
+                        console.log('🎤 Processing interim transcript on timeout:', transcriptToProcess);
+                    }
+                    
+                    if (transcriptToProcess) {
+                        processTranscript(transcriptToProcess);
+                    } else {
+                        reject(new Error('Voice logging timed out - no clear speech detected'));
+                    }
                 }
-            }, 10000); // 10 second timeout
+            }, 11000); // 11 second timeout to match PowerShell duration (10s + 1s buffer)
+
+            const processTranscript = async (transcript) => {
+                try {
+                    console.log('🎤 Processing transcript:', transcript);
+
+                    // Create session if needed
+                    if (!sessionId) {
+                        sessionId = await this.createSession('speech', userProfile?.userId);
+                        console.log('🗣️ Created speech session:', sessionId);
+                    }
+
+                    // Process speech with LangGraph
+                    const result = await this.processSpeech(transcript, userProfile, sessionId);
+                    
+                    if (timerInterval) clearInterval(timerInterval);
+                    
+                    resolve({
+                        transcript,
+                        speechConfidence: 0.8,
+                        processingResult: result
+                    });
+                } catch (error) {
+                    console.error('❌ Error processing speech result:', error);
+                    if (timerInterval) clearInterval(timerInterval);
+                    reject(new Error(`Speech processing failed: ${error.message}`));
+                }
+            };
 
             this.speechService.setEventHandlers({
                 onStart: () => {
                     console.log('🎤 Voice logging started - listening...');
+                    if (options.onStart) options.onStart();
                 },
                 onResult: async (speechResult) => {
-                    if (hasResolved) return;
-                    hasResolved = true;
+                    console.log('🎤 Speech result:', speechResult);
+                    anyTranscriptReceived = true;
                     
-                    if (timeoutId) {
-                        clearTimeout(timeoutId);
-                    }
-
-                    try {
-                        const transcript = speechResult.transcript;
-                        console.log('🎤 Voice input received:', transcript);
-
-                        // Create session if needed
-                        if (!sessionId) {
-                            sessionId = await this.createSession('speech', userProfile?.userId);
-                            console.log('🗣️ Created speech session:', sessionId);
-                        }
-
-                        // Process speech with LangGraph
-                        const result = await this.processSpeech(transcript, userProfile, sessionId);
+                    if (speechResult.isFinal) {
+                        finalTranscript += speechResult.transcript;
+                        console.log('🎤 Final transcript updated:', finalTranscript);
                         
-                        resolve({
-                            transcript,
-                            speechConfidence: speechResult.confidence,
-                            processingResult: result
-                        });
-                    } catch (error) {
-                        console.error('❌ Error processing speech result:', error);
-                        reject(new Error(`Speech processing failed: ${error.message}`));
+                        if (options.onFinalTranscript) {
+                            options.onFinalTranscript(finalTranscript);
+                        }
+                        
+                        // Process final result immediately
+                        if (!hasResolved && finalTranscript.trim()) {
+                            hasResolved = true;
+                            
+                            if (timeoutId) clearTimeout(timeoutId);
+                            
+                            await processTranscript(finalTranscript.trim());
+                        }
+                    } else {
+                        // Handle interim results for real-time display
+                        lastInterimTranscript = speechResult.transcript;
+                        console.log('🎤 Interim transcript updated:', lastInterimTranscript);
+                        
+                        if (options.onInterimTranscript) {
+                            options.onInterimTranscript(speechResult.transcript);
+                        }
+                        
+                        // If interim result is substantial and we haven't resolved yet, consider processing it
+                        if (!hasResolved && speechResult.transcript.trim().length > 2 && speechResult.confidence > 0.4) {
+                            console.log('🎤 Strong interim result, will use if no final result comes');
+                        }
                     }
                 },
                 onError: (error) => {
                     if (hasResolved) return;
                     hasResolved = true;
                     
-                    if (timeoutId) {
-                        clearTimeout(timeoutId);
-                    }
+                    if (timeoutId) clearTimeout(timeoutId);
+                    if (timerInterval) clearInterval(timerInterval);
                     
                     console.error('🎤 Speech recognition error:', error);
                     let errorMessage = 'Speech recognition failed';
@@ -311,16 +390,42 @@ class LangGraphClient {
                         errorMessage = 'Network error during speech recognition. Please check your connection.';
                     }
                     
+                    if (options.onError) options.onError(errorMessage);
                     reject(new Error(errorMessage));
                 },
                 onEnd: () => {
                     console.log('🎤 Voice logging ended');
+                    if (options.onEnd) options.onEnd();
+                    
                     if (!hasResolved) {
-                        hasResolved = true;
-                        if (timeoutId) {
-                            clearTimeout(timeoutId);
+                        // Determine what transcript to use
+                        let transcriptToProcess = '';
+                        
+                        if (finalTranscript.trim()) {
+                            transcriptToProcess = finalTranscript.trim();
+                            console.log('🎤 Using final transcript:', transcriptToProcess);
+                        } else if (lastInterimTranscript.trim() && lastInterimTranscript.trim().length > 2) {
+                            transcriptToProcess = lastInterimTranscript.trim();
+                            console.log('🎤 Using interim transcript as final:', transcriptToProcess);
                         }
-                        reject(new Error('Speech recognition ended without detecting any speech'));
+                        
+                        if (transcriptToProcess) {
+                            hasResolved = true;
+                            if (timeoutId) clearTimeout(timeoutId);
+                            processTranscript(transcriptToProcess);
+                        } else {
+                            hasResolved = true;
+                            if (timeoutId) clearTimeout(timeoutId);
+                            if (timerInterval) clearInterval(timerInterval);
+                            
+                            if (anyTranscriptReceived) {
+                                console.log('⚠️ Speech was detected but not clear enough to process');
+                                reject(new Error('Speech was detected but not clear enough to understand. Please try speaking more clearly.'));
+                            } else {
+                                console.log('❌ No speech detected at all');
+                                reject(new Error('No speech detected. Please try speaking closer to your microphone.'));
+                            }
+                        }
                     }
                 }
             });
@@ -328,23 +433,38 @@ class LangGraphClient {
             // Request microphone permission and start listening
             console.log('🎤 Requesting microphone permission...');
             this.speechService.requestPermission()
-                .then(() => {
+                .then(async () => {
                     console.log('🎤 Permission granted, starting speech recognition...');
-                    this.speechService.startListening({
-                        continuous: false,
-                        interimResults: false,
-                        lang: 'en-US'
-                    });
+                    
+                    try {
+                        await this.speechService.startListening({
+                            continuous: false,
+                            interimResults: true, // Enable real-time transcription
+                            lang: 'en-US'
+                        });
+                        console.log('🎤 Speech recognition started successfully');
+                    } catch (error) {
+                        console.error('🎤 Failed to start speech listening:', error);
+                        
+                        if (hasResolved) return;
+                        hasResolved = true;
+                        
+                        if (timeoutId) clearTimeout(timeoutId);
+                        if (timerInterval) clearInterval(timerInterval);
+                        
+                        if (options.onError) options.onError(`Speech recognition failed to start: ${error.message}`);
+                        reject(new Error(`Speech recognition failed to start: ${error.message}`));
+                    }
                 })
                 .catch((error) => {
                     if (hasResolved) return;
                     hasResolved = true;
                     
-                    if (timeoutId) {
-                        clearTimeout(timeoutId);
-                    }
+                    if (timeoutId) clearTimeout(timeoutId);
+                    if (timerInterval) clearInterval(timerInterval);
                     
                     console.error('❌ Microphone permission error:', error);
+                    if (options.onError) options.onError(`Microphone access failed: ${error.message}`);
                     reject(new Error(`Microphone access failed: ${error.message}`));
                 });
         });

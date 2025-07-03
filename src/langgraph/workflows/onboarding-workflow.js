@@ -117,7 +117,7 @@ class OnboardingWorkflow {
         
         try {
             // Check completion status
-            const requiredFields = ['name', 'age', 'currentWeight', 'height', 'gender', 'primaryGoal', 'activityLevel'];
+            const requiredFields = ['name', 'age', 'currentWeight', 'gender', 'primaryGoal', 'activityLevel'];
             const collectedFields = requiredFields.filter(field => {
                 if (field === 'currentWeight') {
                     // Check both currentWeight and weight fields
@@ -126,6 +126,11 @@ class OnboardingWorkflow {
                 }
                 return userData[field] !== undefined && userData[field] !== null;
             });
+            
+            // Check height separately (can be either imperial or metric)
+            if (userData.heightFeet || userData.heightCm) {
+                collectedFields.push('height');
+            }
             
             console.log('🔍 Required fields:', requiredFields);
             console.log('🔍 Collected fields:', collectedFields);
@@ -200,7 +205,7 @@ class OnboardingWorkflow {
         if (!userData.age) missingInfo.push('age');
         if (!userData.gender) missingInfo.push('gender');
         if (!userData.currentWeight) missingInfo.push('current weight');
-        if (!userData.height) missingInfo.push('height');
+        if (!userData.heightFeet && !userData.heightCm) missingInfo.push('height');
 
         if (missingInfo.length === 0) {
             return {
@@ -544,8 +549,10 @@ Keep it conversational and enthusiastic (2-3 sentences). Use appropriate emojis.
             age: userData.age,
             currentWeight: currentWeight,
             weightUnit: userData.weightUnit || 'lbs',
-            height: userData.height,
-            heightUnit: userData.heightUnit || 'ft',
+            heightUnit: userData.heightUnit || 'imperial',
+            heightFeet: userData.heightFeet || null,
+            heightInches: userData.heightInches || null,
+            heightCm: userData.heightCm || null,
             gender: userData.gender,
             primaryGoal: userData.primaryGoal,
             goalWeight: userData.goalWeight,
@@ -600,11 +607,18 @@ Keep it conversational and enthusiastic (2-3 sentences). Use appropriate emojis.
             if (heightMatch[1] && heightMatch[2]) {
                 const feet = parseInt(heightMatch[1]);
                 const inches = parseInt(heightMatch[2]);
-                userData.height = feet + (inches / 12); // Convert to decimal feet
-                userData.heightUnit = 'ft';
+                userData.heightFeet = feet;
+                userData.heightInches = inches;
+                userData.heightUnit = 'imperial';
             } else if (heightMatch[1] && heightMatch[3]) {
-                userData.height = parseInt(heightMatch[1]);
-                userData.heightUnit = heightMatch[3].toLowerCase().includes('cm') ? 'cm' : 'in';
+                if (heightMatch[3].toLowerCase().includes('cm')) {
+                    userData.heightCm = parseInt(heightMatch[1]);
+                    userData.heightUnit = 'metric';
+                } else {
+                    // Handle just inches input
+                    userData.heightInches = parseInt(heightMatch[1]);
+                    userData.heightUnit = 'imperial';
+                }
             }
         }
 
