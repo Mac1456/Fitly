@@ -506,6 +506,58 @@
             </div>
         </div>
 
+        <!-- Weight Update Modal -->
+        <div id="weightUpdateModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>⚖️ Update Weight</h3>
+                    <button class="close-btn" id="closeWeightModal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <form id="weightUpdateForm">
+                        <div class="form-group">
+                            <label for="newWeight">Current Weight</label>
+                            <div class="input-with-unit">
+                                <input type="number" id="newWeight" name="weight" placeholder="150" step="0.1" required>
+                                <select id="weightUnit" name="weightUnit">
+                                    <option value="lbs">lbs</option>
+                                    <option value="kg">kg</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="weightNotes">Notes (Optional)</label>
+                            <textarea id="weightNotes" name="notes" placeholder="How are you feeling? Any observations about your progress..." rows="3"></textarea>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="measurementDate">Date</label>
+                            <input type="date" id="measurementDate" name="date" required>
+                        </div>
+                        
+                        <div class="weight-insights" id="weightInsights" style="display: none;">
+                            <h4>📊 Weight Insights</h4>
+                            <div class="insight-item">
+                                <span class="insight-label">Change from last entry:</span>
+                                <span class="insight-value" id="weightChange">--</span>
+                            </div>
+                            <div class="insight-item">
+                                <span class="insight-label">Progress toward goal:</span>
+                                <span class="insight-value" id="goalProgress">--</span>
+                            </div>
+                            <div class="insight-item">
+                                <span class="insight-label">Weekly trend:</span>
+                                <span class="insight-value" id="weeklyTrend">--</span>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" class="cta-button">Update Weight</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
         <!-- Profile Settings Modal -->
         <div id="profileModal" class="modal">
             <div class="modal-content large-modal">

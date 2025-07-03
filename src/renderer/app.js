@@ -118,6 +118,19 @@ const elements = {
     stopRecordingBtn: document.getElementById('stopRecordingBtn'),
     cancelRecordingBtn: document.getElementById('cancelRecordingBtn'),
     
+    // Weight Update Modal Elements
+    weightUpdateModal: document.getElementById('weightUpdateModal'),
+    closeWeightModal: document.getElementById('closeWeightModal'),
+    weightUpdateForm: document.getElementById('weightUpdateForm'),
+    newWeight: document.getElementById('newWeight'),
+    weightUnit: document.getElementById('weightUnit'),
+    weightNotes: document.getElementById('weightNotes'),
+    measurementDate: document.getElementById('measurementDate'),
+    weightInsights: document.getElementById('weightInsights'),
+    weightChange: document.getElementById('weightChange'),
+    goalProgress: document.getElementById('goalProgress'),
+    weeklyTrend: document.getElementById('weeklyTrend'),
+    
     // UI elements
     loadingSpinner: document.getElementById('loadingSpinner'),
     
@@ -2386,17 +2399,123 @@ const dashboard = {
         
         const activityData = {
             workedOut: elements.workedOutToday?.checked || false,
-            walked: elements.walkedToday?.checked || false
+            walked: elements.walkedToday?.checked || false,
+            activityScore: dashboard.calculateActivityScore(),
+            timestamp: new Date(),
+            totalCalories: appState.dailyNutrition?.calories || 0,
+            mealCount: appState.todaysMeals?.length || 0
         };
         
         try {
             if (appState.currentUser) {
                 await window.firebaseDB.updateTodayActivity(appState.currentUser.uid, activityData);
-                console.log('✅ Activity updated');
+                console.log('✅ Activity updated with score:', activityData.activityScore);
+                
+                // Update activity impact in UI
+                dashboard.updateActivityImpact(activityData);
+                
+                // Use AI to analyze activity impact if available
+                if (appState.langGraphReady && window.langGraphClient) {
+                    try {
+                        const analysis = await window.langGraphClient.analyzeActivity(
+                            appState.userProfile,
+                            activityData,
+                            appState.todaysMeals
+                        );
+                        
+                        if (analysis && analysis.suggestions) {
+                            // Show AI insights about activity impact
+                            utils.showNotification(analysis.suggestions, 'info');
+                        }
+                    } catch (aiError) {
+                        console.warn('⚠️ AI activity analysis failed:', aiError);
+                    }
+                }
             }
         } catch (error) {
             console.error('❌ Error updating activity:', error);
         }
+    },
+    
+    calculateActivityScore: () => {
+        let score = 0;
+        
+        // Base score for different activities
+        if (elements.workedOutToday?.checked) {
+            score += 3; // High impact
+        }
+        
+        if (elements.walkedToday?.checked) {
+            score += 1; // Moderate impact
+        }
+        
+        // Consider meal timing and frequency
+        const currentHour = new Date().getHours();
+        const mealCount = appState.todaysMeals?.length || 0;
+        
+        if (mealCount >= 3) {
+            score += 1; // Good meal frequency
+        }
+        
+        // Consider calorie intake vs goals
+        const calorieGoal = utils.calculateCalorieGoal(appState.userProfile);
+        const currentCalories = appState.dailyNutrition?.calories || 0;
+        const calorieRatio = currentCalories / calorieGoal;
+        
+        if (calorieRatio >= 0.8 && calorieRatio <= 1.2) {
+            score += 1; // Good calorie management
+        }
+        
+        return Math.max(0, Math.min(score, 5)); // Cap at 5
+    },
+    
+    updateActivityImpact: (activityData) => {
+        console.log('📊 Updating activity impact display...');
+        
+        // Find activity checkboxes and add impact indicators
+        const workedOutLabel = elements.workedOutToday?.closest('.checkbox-label');
+        const walkedLabel = elements.walkedToday?.closest('.checkbox-label');
+        
+        if (workedOutLabel) {
+            let impactDiv = workedOutLabel.querySelector('.activity-impact');
+            if (!impactDiv) {
+                impactDiv = document.createElement('div');
+                impactDiv.className = 'activity-impact';
+                workedOutLabel.appendChild(impactDiv);
+            }
+            
+            if (activityData.workedOut) {
+                impactDiv.textContent = '🔥 Boosting metabolism +250 cal burn';
+                impactDiv.style.display = 'block';
+            } else {
+                impactDiv.style.display = 'none';
+            }
+        }
+        
+        if (walkedLabel) {
+            let impactDiv = walkedLabel.querySelector('.activity-impact');
+            if (!impactDiv) {
+                impactDiv = document.createElement('div');
+                impactDiv.className = 'activity-impact';
+                walkedLabel.appendChild(impactDiv);
+            }
+            
+            if (activityData.walked) {
+                impactDiv.textContent = '🚶 Active lifestyle +100 cal burn';
+                impactDiv.style.display = 'block';
+            } else {
+                impactDiv.style.display = 'none';
+            }
+        }
+        
+        // Update live stats with activity score
+        const activityScore = activityData.activityScore;
+        if (elements.liveActivities) {
+            elements.liveActivities.textContent = `${activityScore}/5`;
+            elements.liveActivities.title = `Activity Score: ${activityScore}/5`;
+        }
+        
+        console.log('✅ Activity impact updated');
     },
     
     renderMealsList: () => {
@@ -2505,6 +2624,10 @@ const dashboard = {
             await dashboard.loadTodaysData();
             console.log('✅ Today\'s data reloaded');
             
+            // Load today's activity state
+            await dashboard.loadTodaysActivity();
+            console.log('✅ Today\'s activity loaded');
+            
             // Update nutrition display
             dashboard.updateNutritionDisplay();
             console.log('✅ Nutrition display updated');
@@ -2516,6 +2639,54 @@ const dashboard = {
             console.log('✅ Dashboard refresh complete');
         } catch (error) {
             console.error('❌ Error refreshing dashboard:', error);
+        }
+    },
+    
+    loadTodaysActivity: async () => {
+        console.log('📅 Loading today\'s activity state...');
+        
+        if (!appState.currentUser) {
+            console.log('⚠️ No user logged in for activity loading');
+            return;
+        }
+        
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const activityData = await window.firebaseDB.getTodayActivity(appState.currentUser.uid, today);
+            
+            if (activityData) {
+                // Update checkbox states
+                if (elements.workedOutToday) {
+                    elements.workedOutToday.checked = activityData.workedOut || false;
+                }
+                if (elements.walkedToday) {
+                    elements.walkedToday.checked = activityData.walked || false;
+                }
+                
+                // Update activity impact display
+                dashboard.updateActivityImpact(activityData);
+                
+                console.log('✅ Today\'s activity state loaded:', activityData);
+            } else {
+                console.log('📅 No activity data found for today');
+                
+                // Reset checkboxes to unchecked state
+                if (elements.workedOutToday) {
+                    elements.workedOutToday.checked = false;
+                }
+                if (elements.walkedToday) {
+                    elements.walkedToday.checked = false;
+                }
+                
+                // Update activity impact display with empty data
+                dashboard.updateActivityImpact({
+                    workedOut: false,
+                    walked: false,
+                    activityScore: 0
+                });
+            }
+        } catch (error) {
+            console.error('❌ Error loading today\'s activity:', error);
         }
     }
 };
@@ -3205,9 +3376,210 @@ const meals = {
 // Weight management functions
 const weight = {
     showWeightModal: () => {
-        console.log('⚖️ Weight update not implemented yet');
-        utils.showNotification('Weight update will be implemented soon!', 'info');
-        // TODO: Implement weight update modal
+        console.log('⚖️ Opening weight update modal...');
+        weight.populateWeightModal();
+        if (elements.weightUpdateModal) {
+            elements.weightUpdateModal.style.display = 'block';
+            console.log('✅ Weight update modal opened');
+        }
+    },
+    
+    hideWeightModal: () => {
+        console.log('❌ Closing weight update modal...');
+        if (elements.weightUpdateModal) {
+            elements.weightUpdateModal.style.display = 'none';
+            weight.clearWeightForm();
+            console.log('✅ Weight update modal closed');
+        }
+    },
+    
+    populateWeightModal: async () => {
+        console.log('📋 Populating weight modal with current data...');
+        
+        // Set current weight and unit from profile
+        if (appState.userProfile) {
+            if (elements.newWeight) {
+                elements.newWeight.value = appState.userProfile.currentWeight || '';
+            }
+            if (elements.weightUnit) {
+                elements.weightUnit.value = appState.userProfile.weightUnit || 'lbs';
+            }
+        }
+        
+        // Set today's date
+        if (elements.measurementDate) {
+            const today = new Date().toISOString().split('T')[0];
+            elements.measurementDate.value = today;
+        }
+        
+        // Load weight insights
+        await weight.loadWeightInsights();
+        
+        console.log('✅ Weight modal populated');
+    },
+    
+    clearWeightForm: () => {
+        console.log('🧹 Clearing weight form...');
+        if (elements.weightUpdateForm) {
+            elements.weightUpdateForm.reset();
+        }
+        if (elements.weightInsights) {
+            elements.weightInsights.style.display = 'none';
+        }
+    },
+    
+    loadWeightInsights: async () => {
+        console.log('📊 Loading weight insights...');
+        
+        if (!appState.currentUser) {
+            console.log('⚠️ No user logged in for weight insights');
+            return;
+        }
+        
+        try {
+            // Get recent weight entries
+            const weightHistory = await window.firebaseDB.getWeightHistory(appState.currentUser.uid, 30);
+            
+            if (weightHistory && weightHistory.length > 0) {
+                const currentWeight = parseFloat(elements.newWeight?.value) || appState.userProfile?.currentWeight;
+                const lastEntry = weightHistory[0];
+                const weekAgoEntries = weightHistory.filter(entry => {
+                    const entryDate = new Date(entry.date);
+                    const weekAgo = new Date();
+                    weekAgo.setDate(weekAgo.getDate() - 7);
+                    return entryDate <= weekAgo;
+                });
+                
+                // Calculate weight change
+                if (currentWeight && lastEntry) {
+                    const weightDiff = currentWeight - lastEntry.weight;
+                    const diffText = weightDiff > 0 ? `+${weightDiff.toFixed(1)}` : weightDiff.toFixed(1);
+                    const unit = elements.weightUnit?.value || 'lbs';
+                    
+                    if (elements.weightChange) {
+                        elements.weightChange.textContent = `${diffText} ${unit}`;
+                        elements.weightChange.className = `insight-value ${weightDiff > 0 ? 'positive' : weightDiff < 0 ? 'negative' : 'neutral'}`;
+                    }
+                }
+                
+                // Calculate goal progress
+                if (appState.userProfile?.goalWeight && currentWeight) {
+                    const goalWeight = appState.userProfile.goalWeight;
+                    const startWeight = appState.userProfile.currentWeight || currentWeight;
+                    const totalProgress = startWeight - goalWeight;
+                    const currentProgress = startWeight - currentWeight;
+                    const progressPercent = totalProgress !== 0 ? (currentProgress / totalProgress * 100).toFixed(1) : 0;
+                    
+                    if (elements.goalProgress) {
+                        elements.goalProgress.textContent = `${progressPercent}% of goal`;
+                        elements.goalProgress.className = `insight-value ${progressPercent > 0 ? 'positive' : 'neutral'}`;
+                    }
+                }
+                
+                // Calculate weekly trend
+                if (weekAgoEntries.length > 0) {
+                    const weekAgoWeight = weekAgoEntries[0].weight;
+                    const weeklyChange = currentWeight - weekAgoWeight;
+                    const weeklyText = weeklyChange > 0 ? `+${weeklyChange.toFixed(1)}` : weeklyChange.toFixed(1);
+                    const unit = elements.weightUnit?.value || 'lbs';
+                    
+                    if (elements.weeklyTrend) {
+                        elements.weeklyTrend.textContent = `${weeklyText} ${unit}/week`;
+                        elements.weeklyTrend.className = `insight-value ${weeklyChange < 0 ? 'positive' : weeklyChange > 0 ? 'negative' : 'neutral'}`;
+                    }
+                }
+                
+                // Show insights panel
+                if (elements.weightInsights) {
+                    elements.weightInsights.style.display = 'block';
+                }
+            }
+            
+        } catch (error) {
+            console.error('❌ Error loading weight insights:', error);
+        }
+    },
+    
+    handleWeightSubmit: async (e) => {
+        e.preventDefault();
+        console.log('⚖️ Submitting weight update...');
+        
+        if (!appState.currentUser) {
+            utils.showNotification('Please log in to update your weight', 'error');
+            return;
+        }
+        
+        // Get form data
+        const formData = new FormData(e.target);
+        const weightData = {
+            weight: parseFloat(formData.get('weight')),
+            unit: formData.get('weightUnit') || 'lbs',
+            notes: formData.get('notes') || '',
+            date: formData.get('date'),
+            timestamp: new Date()
+        };
+        
+        // Validate weight
+        if (!weightData.weight || weightData.weight <= 0) {
+            utils.showNotification('Please enter a valid weight', 'error');
+            return;
+        }
+        
+        // Show loading
+        utils.showLoadingSpinner();
+        
+        try {
+            // Save weight entry to Firebase
+            await window.firebaseDB.addWeightEntry(appState.currentUser.uid, weightData);
+            
+            // Update user profile with current weight
+            const updatedProfile = {
+                ...appState.userProfile,
+                currentWeight: weightData.weight,
+                weightUnit: weightData.unit,
+                lastWeightUpdate: new Date().toISOString()
+            };
+            
+            await window.firebaseDB.updateUserProfile(appState.currentUser.uid, updatedProfile);
+            appState.userProfile = updatedProfile;
+            
+            // Use AI to analyze weight progress if available
+            if (appState.langGraphReady && window.langGraphClient) {
+                try {
+                    const analysis = await window.langGraphClient.analyzeWeight(
+                        appState.userProfile,
+                        weightData,
+                        appState.todaysMeals
+                    );
+                    
+                    if (analysis && analysis.message) {
+                        // Show AI analysis
+                        utils.showNotification(analysis.message, 'success');
+                    }
+                } catch (aiError) {
+                    console.warn('⚠️ AI weight analysis failed:', aiError);
+                }
+            }
+            
+            // Update UI
+            dashboard.updateUI();
+            aiAssistant.updateLiveStats();
+            
+            // Show success message
+            utils.showNotification('Weight updated successfully!', 'success');
+            
+            // Add to recent logs
+            aiAssistant.addRecentLog(`⚖️ Weight: ${weightData.weight} ${weightData.unit}`);
+            
+            // Close modal
+            weight.hideWeightModal();
+            
+        } catch (error) {
+            console.error('❌ Error updating weight:', error);
+            utils.showNotification('Failed to update weight. Please try again.', 'error');
+        }
+        
+        utils.hideLoadingSpinner();
     }
 };
 
@@ -3920,6 +4292,29 @@ const setupGlobalEventListeners = () => {
         voiceRecordingModal.addEventListener('click', (e) => {
             if (e.target === voiceRecordingModal) {
                 meals.hideVoiceRecordingModal();
+            }
+        });
+    }
+    
+    // Weight update modal event listeners
+    const closeWeightModal = document.getElementById('closeWeightModal');
+    if (closeWeightModal) {
+        closeWeightModal.addEventListener('click', () => {
+            weight.hideWeightModal();
+        });
+    }
+    
+    const weightUpdateForm = document.getElementById('weightUpdateForm');
+    if (weightUpdateForm) {
+        weightUpdateForm.addEventListener('submit', weight.handleWeightSubmit);
+    }
+    
+    // Weight modal background click to close
+    const weightUpdateModal = document.getElementById('weightUpdateModal');
+    if (weightUpdateModal) {
+        weightUpdateModal.addEventListener('click', (e) => {
+            if (e.target === weightUpdateModal) {
+                weight.hideWeightModal();
             }
         });
     }

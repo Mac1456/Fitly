@@ -309,6 +309,36 @@ window.firebaseDB = {
         }
     },
     
+    // Get weight history
+    getWeightHistory: async (userId, days = 30) => {
+        try {
+            console.log('Getting weight history for user:', userId, 'days:', days);
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - days);
+            
+            const snapshot = await db.collection('users').doc(userId).collection('weight')
+                .where('timestamp', '>=', cutoffDate)
+                .orderBy('timestamp', 'desc')
+                .get();
+            
+            const weightHistory = [];
+            snapshot.forEach(doc => {
+                const data = doc.data();
+                weightHistory.push({
+                    id: doc.id,
+                    ...data,
+                    date: data.date || (data.timestamp ? data.timestamp.toDate().toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
+                });
+            });
+            
+            console.log('✅ Weight history retrieved:', weightHistory.length, 'entries');
+            return weightHistory;
+        } catch (error) {
+            console.error('❌ Error getting weight history:', error);
+            throw error;
+        }
+    },
+    
     // Update activity for today
     updateTodayActivity: async (userId, activityData) => {
         try {
@@ -324,6 +354,28 @@ window.firebaseDB = {
             console.log('✅ Today\'s activity updated');
         } catch (error) {
             console.error('❌ Error updating today\'s activity:', error);
+            throw error;
+        }
+    },
+    
+    // Get today's activity
+    getTodayActivity: async (userId, date = null) => {
+        try {
+            const today = date || new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+            console.log('Getting today\'s activity for:', userId, today);
+            
+            const doc = await db.collection('users').doc(userId).collection('activities').doc(today).get();
+            
+            if (doc.exists) {
+                const data = doc.data();
+                console.log('✅ Today\'s activity retrieved:', data);
+                return data;
+            } else {
+                console.log('📅 No activity data found for today');
+                return null;
+            }
+        } catch (error) {
+            console.error('❌ Error getting today\'s activity:', error);
             throw error;
         }
     }

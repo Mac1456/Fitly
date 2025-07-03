@@ -574,21 +574,40 @@ input:focus, select:focus, textarea:focus {
 .activity-checkboxes {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.75rem;
 }
 
 .checkbox-label {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
     cursor: pointer;
     font-size: 0.9rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    transition: background-color 0.2s ease;
+}
+
+.checkbox-label:hover {
+    background-color: #f8f9fa;
 }
 
 .checkbox-label input[type="checkbox"] {
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     margin: 0;
+    accent-color: #667eea;
+}
+
+.checkbox-label input[type="checkbox"]:checked + .checkmark {
+    color: #667eea;
+}
+
+.activity-impact {
+    font-size: 0.8rem;
+    color: #28a745;
+    margin-top: 0.25rem;
+    font-style: italic;
 }
 
 /* Action Buttons */
@@ -1954,4 +1973,53 @@ button:focus, input:focus, select:focus, textarea:focus {
     font-style: italic;
     color: #6c757d;
     padding-left: 15px;
+}
+
+/* Weight Insights */
+.weight-insights {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+    border: 1px solid #e9ecef;
+}
+
+.weight-insights h4 {
+    margin-bottom: 0.75rem;
+    color: #495057;
+    font-size: 1rem;
+}
+
+.insight-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.insight-item:last-child {
+    border-bottom: none;
+}
+
+.insight-label {
+    font-size: 0.9rem;
+    color: #6c757d;
+}
+
+.insight-value {
+    font-weight: 600;
+    color: #495057;
+}
+
+.insight-value.positive {
+    color: #28a745;
+}
+
+.insight-value.negative {
+    color: #dc3545;
+}
+
+.insight-value.neutral {
+    color: #6c757d;
 } 

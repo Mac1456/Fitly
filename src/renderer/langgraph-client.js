@@ -223,6 +223,70 @@ class LangGraphClient {
     }
 
     /**
+     * Analyze weight progress and provide insights
+     */
+    async analyzeWeight(userProfile, weightData, recentMeals = []) {
+        if (!this.isReady) {
+            return {
+                message: `Weight updated to ${weightData.weight} ${weightData.unit}. Keep tracking your progress!`,
+                insights: [],
+                suggestions: []
+            };
+        }
+
+        try {
+            const result = await this.ipcRenderer.invoke(
+                'langgraph-analyze-weight',
+                userProfile,
+                weightData,
+                recentMeals
+            );
+            
+            console.log('⚖️ Weight analysis result:', result);
+            return result;
+        } catch (error) {
+            console.error('❌ Error analyzing weight:', error);
+            return {
+                message: `Weight updated to ${weightData.weight} ${weightData.unit}. Great job staying consistent with tracking!`,
+                insights: [],
+                suggestions: []
+            };
+        }
+    }
+
+    /**
+     * Analyze activity impact and provide personalized insights
+     */
+    async analyzeActivity(userProfile, activityData, recentMeals = []) {
+        if (!this.isReady) {
+            return {
+                suggestions: `Activity score: ${activityData.activityScore}/5. Great job staying active!`,
+                insights: [],
+                recommendations: []
+            };
+        }
+
+        try {
+            const result = await this.ipcRenderer.invoke(
+                'langgraph-analyze-activity',
+                userProfile,
+                activityData,
+                recentMeals
+            );
+            
+            console.log('💪 Activity analysis result:', result);
+            return result;
+        } catch (error) {
+            console.error('❌ Error analyzing activity:', error);
+            return {
+                suggestions: `Activity score: ${activityData.activityScore}/5. Keep up the great work!`,
+                insights: [],
+                recommendations: []
+            };
+        }
+    }
+
+    /**
      * Voice logging with speech recognition and visual feedback
      */
     async startVoiceLogging(userProfile = null, options = {}) {
