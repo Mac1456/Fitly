@@ -690,8 +690,10 @@ ipcMain.handle('langgraph-onboarding-chat', async (event, userMessage, conversat
         
         const result = await langGraphManager.executeWorkflow('onboarding', input, sessionId);
         
-        // Ensure we don't complete too early
-        if (progress && progress.step < progress.maxSteps) {
+        // Only override completion if the AI workflow clearly made an error
+        // Trust the AI workflow's completion determination unless there's missing critical data
+        if (progress && result.isComplete && !result.profileData) {
+            console.log('⚠️ AI workflow claimed completion but no profile data - overriding to continue');
             result.complete = false;
             result.isComplete = false;
         }

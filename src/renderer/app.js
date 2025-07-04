@@ -286,8 +286,8 @@ const utils = {
             utils.updateNavigation('dashboard');
             console.log('✅ Dashboard screen activated');
             
-            // Ensure dashboard event listeners are set up
-            if (window.dashboard && typeof window.dashboard.setupEventListeners === 'function') {
+            // Only set up event listeners if not already done
+            if (window.dashboard && typeof window.dashboard.setupEventListeners === 'function' && !window.dashboard.listenersSetup) {
                 console.log('🔧 Setting up dashboard event listeners...');
                 window.dashboard.setupEventListeners();
             }
@@ -1439,24 +1439,46 @@ const onboarding = {
             
             // Check if onboarding is complete (with better validation)
             if (response.complete || response.isComplete) {
+                console.log('🔍 🚨 ONBOARDING COMPLETION DETECTED!');
+                console.log('🔍 Response.complete:', response.complete);
+                console.log('🔍 Response.isComplete:', response.isComplete);
+                console.log('🔍 Response.profileData:', response.profileData);
+                console.log('🔍 Response.userData:', response.userData);
+                console.log('🔍 Full response object:', response);
+                
                 const profileData = response.profileData || response.userData;
-                console.log('🔍 Onboarding completion check:', { profileData, complete: response.complete, isComplete: response.isComplete });
+                console.log('🔍 Selected profileData:', profileData);
+                console.log('🔍 ProfileData type:', typeof profileData);
+                console.log('🔍 ProfileData keys:', profileData ? Object.keys(profileData) : 'null');
+                
+                if (!profileData) {
+                    console.error('❌ CRITICAL: No profile data available for completion!');
+                    onboarding.addMessage("Error: No profile data received. Please try again.", 'ai');
+                    return;
+                }
                 
                 // Map userData fields to expected profile format with robust field handling
-                const mappedProfileData = profileData ? {
+                const mappedProfileData = {
                     userName: profileData.userName || profileData.name,
                     age: profileData.age,
                     currentWeight: profileData.currentWeight || profileData.weight,
                     weightUnit: profileData.weightUnit || 'lbs',
-                    height: profileData.height,
-                    heightUnit: profileData.heightUnit || 'ft',
+                    heightUnit: profileData.heightUnit || 'imperial',
+                    heightFeet: profileData.heightFeet,
+                    heightInches: profileData.heightInches,
+                    heightCm: profileData.heightCm,
                     gender: profileData.gender,
                     primaryGoal: profileData.primaryGoal,
                     goalWeight: profileData.goalWeight,
                     activityLevel: profileData.activityLevel,
                     workoutFrequency: profileData.workoutFrequency,
                     dietaryPreferences: profileData.dietaryPreferences || []
-                } : null;
+                };
+                
+                console.log('🔍 MAPPED PROFILE DATA ANALYSIS:');
+                console.log('🔍 Raw profileData.activityLevel:', profileData.activityLevel);
+                console.log('🔍 Mapped activityLevel:', mappedProfileData.activityLevel);
+                console.log('🔍 Complete mapped data:', mappedProfileData);
                 
                 // Additional validation to ensure critical fields are present
                 if (mappedProfileData) {
@@ -1486,38 +1508,121 @@ const onboarding = {
                     }
                 }
                 
-                const requiredFields = ['userName', 'currentWeight', 'height', 'age', 'gender', 'activityLevel', 'primaryGoal'];
-                const hasAllRequired = mappedProfileData && requiredFields.every(field => mappedProfileData[field] !== undefined && mappedProfileData[field] !== null);
+                // Check required fields with special handling for height
+                const requiredFields = ['userName', 'currentWeight', 'age', 'gender', 'activityLevel', 'primaryGoal'];
+                const hasAllRequired = mappedProfileData && 
+                    requiredFields.every(field => mappedProfileData[field] !== undefined && mappedProfileData[field] !== null) &&
+                    (mappedProfileData.heightFeet || mappedProfileData.heightCm); // Height can be imperial or metric
                 
-                console.log('🔍 Mapped profile data:', mappedProfileData);
-                console.log('🔍 Required fields check:', requiredFields.map(field => ({ field, value: mappedProfileData?.[field], hasValue: mappedProfileData?.[field] !== undefined })));
+                console.log('🔍 DETAILED FIELD VALIDATION:');
+                const fieldValidation = requiredFields.map(field => {
+                    const value = mappedProfileData?.[field];
+                    const hasValue = value !== undefined && value !== null && value !== '';
+                    console.log(`🔍 Field ${field}: "${value}" (${typeof value}) - Valid: ${hasValue}`);
+                    return { field, value, hasValue };
+                });
+                
+                const invalidFields = fieldValidation.filter(f => !f.hasValue);
+                console.log('🔍 Invalid fields:', invalidFields.map(f => f.field));
+                
+                console.log('🔍 Height check:', { 
+                    heightFeet: mappedProfileData?.heightFeet, 
+                    heightCm: mappedProfileData?.heightCm, 
+                    hasHeight: !!(mappedProfileData?.heightFeet || mappedProfileData?.heightCm) 
+                });
+                
+                console.log('🔍 Complete mapped profile data:', mappedProfileData);
                 
                 if (hasAllRequired) {
                     console.log('✅ Onboarding complete with all required data, saving profile...');
                     try {
-                        await onboarding.saveProfileData(mappedProfileData);
+                        console.log('💾 Attempting to save profile data...');
+                        const saveResult = await onboarding.saveProfileData(mappedProfileData);
+                        
+                        if (saveResult === false) {
+                            throw new Error('Profile save returned false - validation failed');
+                        }
+                        
                         console.log('✅ Profile saved successfully!');
                         
-                        // Hide the onboarding chat interface after successful completion
-                        console.log('🔄 Hiding onboarding chat interface...');
-                        onboarding.hideChat();
+                        // Update app state to reflect completed onboarding
+                        appState.userProfile = mappedProfileData;
+                        appState.onboardingComplete = true;
                         
-                        // Show completion message briefly before switching
+                        // Add a completion message to the chat
+                        onboarding.addMessage("🎉 Perfect! Your profile is complete. Taking you to the main app now...", 'ai');
+                        
+                        // Hide the onboarding chat interface after successful completion
                         setTimeout(() => {
-                            console.log('🎉 Onboarding fully complete, user should now see main app');
-                            console.log('🔍 Current app state after completion:', {
-                                userProfile: !!appState.userProfile,
-                                currentScreen: appState.currentScreen,
-                                currentUser: !!appState.currentUser
-                            });
+                            try {
+                                console.log('🔄 Hiding onboarding and switching to main app...');
+                                onboarding.hideChat();
+                                
+                                // Force redirect to main app
+                                console.log('🎉 Redirecting to main app dashboard');
+                                appState.currentScreen = 'dashboard';
+                                
+                                // Trigger a screen switch to dashboard
+                                if (typeof utils !== 'undefined' && typeof utils.switchScreen === 'function') {
+                                    utils.switchScreen('dashboard');
+                                    console.log('📱 Switched to dashboard using utils.switchScreen');
+                                } else {
+                                    // Manual screen switch if function doesn't exist
+                                    console.log('⚠️ utils.switchScreen not available, using manual screen switch');
+                                    try {
+                                        const onboardingSection = document.querySelector('.onboarding-section');
+                                        const dashboardSection = document.querySelector('.dashboard-section');
+                                        const mainAppSection = document.querySelector('.main-app');
+                                        
+                                        if (onboardingSection) {
+                                            onboardingSection.style.display = 'none';
+                                            console.log('✅ Hidden onboarding section');
+                                        }
+                                        if (dashboardSection) {
+                                            dashboardSection.style.display = 'block';
+                                            console.log('✅ Shown dashboard section');
+                                        }
+                                        if (mainAppSection) {
+                                            mainAppSection.style.display = 'block';
+                                            console.log('✅ Shown main app section');
+                                        }
+                                    } catch (domError) {
+                                        console.error('❌ Error with manual screen switch:', domError);
+                                    }
+                                }
+                                
+                                // Initialize the main app if needed
+                                if (typeof dashboard !== 'undefined' && typeof dashboard.initialize === 'function') {
+                                    console.log('🔄 Initializing dashboard...');
+                                    dashboard.initialize();
+                                } else {
+                                    console.log('⚠️ Dashboard not available or initialize method missing');
+                                }
+                                
+                                console.log('✅ Successfully redirected to main app');
+                            } catch (redirectError) {
+                                console.error('❌ Error during redirect process:', redirectError);
+                                // Still show a success message to user
+                                onboarding.addMessage("✅ Your profile has been saved successfully! You can now access the main app.", 'ai');
+                            }
                         }, 2000);
                         
                     } catch (error) {
                         console.error('❌ Error saving profile:', error);
+                        onboarding.addMessage("There was an error saving your profile. Please try again.", 'ai');
                     }
                 } else {
-                    console.log('⚠️ Onboarding marked complete but missing required fields, continuing conversation...');
-                    console.log('🔍 Missing fields:', requiredFields.filter(field => !mappedProfileData || mappedProfileData[field] === undefined || mappedProfileData[field] === null));
+                    console.log('⚠️ ❌ ONBOARDING CLAIMED COMPLETION BUT MISSING REQUIRED FIELDS!');
+                    console.log('🔍 Missing fields analysis:', invalidFields);
+                    console.log('🔍 Complete profile data received:', mappedProfileData);
+                    console.log('🔍 Activity level specifically:', {
+                        raw: profileData.activityLevel,
+                        mapped: mappedProfileData.activityLevel,
+                        type: typeof mappedProfileData.activityLevel
+                    });
+                    
+                    // Add a message to the user explaining the issue
+                    onboarding.addMessage("I still need a bit more information to complete your profile. Let me ask about what's missing.", 'ai');
                     
                     // Reset completion flag and continue
                     response.complete = false;
@@ -1729,76 +1834,107 @@ const onboarding = {
         if (!appState.onboardingProgress) return;
 
         const progress = appState.onboardingProgress;
-        const userData = progress.collectedData;
         
-        // Extract information from user's latest message
-        onboarding.extractUserInfo(userMessage.toLowerCase(), userData);
+        // Use the AI-interpreted data from the response (trust the workflow's data)
+        const userData = aiResponse.userData || {};
         
-        // Analyze AI response to understand what step we're on
-        const aiMessage = aiResponse.message || aiResponse.motivationalMessage || '';
+        // Update progress data with the latest from AI workflow
+        progress.collectedData = { ...progress.collectedData, ...userData };
         
-        // Update step based on what information we have and what the AI is asking for
-        const collectedFields = Object.keys(userData).filter(key => userData[key] !== null && userData[key] !== undefined);
-        
-        console.log('🔍 Progress update:');
-        console.log('  - Collected fields:', collectedFields);
+        console.log('🔍 AI-powered progress update:');
+        console.log('  - Updated data:', progress.collectedData);
+        console.log('  - AI workflow says complete:', aiResponse.complete || aiResponse.isComplete);
         console.log('  - Current step:', progress.step);
-        console.log('  - User data:', userData);
         
-        // Determine current step based on collected information
-        if (!userData.name) {
-            progress.step = 1; // Asking for name
-        } else if (!userData.age) {
-            progress.step = 2; // Asking for age
-        } else if (!userData.weight) {
-            progress.step = 3; // Asking for weight
-        } else if (!userData.heightFeet && !userData.heightCm) {
-            progress.step = 4; // Asking for height
-        } else if (!userData.gender) {
-            progress.step = 5; // Asking for gender
-        } else if (!userData.primaryGoal) {
-            progress.step = 6; // Asking for goals
-        } else if (!userData.activityLevel) {
-            progress.step = 7; // Asking for activity level
+        // Trust the AI workflow's completion determination
+        // The workflow has already validated all required fields
+        if (aiResponse.complete || aiResponse.isComplete) {
+            console.log('✅ AI workflow confirmed completion - trusting its judgment');
+            progress.step = progress.maxSteps;
         } else {
-            progress.step = 8; // Should be complete
-        }
-        
-        // Override completion if we don't have enough data
-        if (progress.step < 8) {
-            if (aiResponse.complete || aiResponse.isComplete) {
-                console.log('⚠️ AI tried to complete early, overriding...');
-                aiResponse.complete = false;
-                aiResponse.isComplete = false;
-            }
-        }
-        
-        // Provide the collected data back to the response for proper tracking
-        if (aiResponse.userData) {
-            aiResponse.userData = { ...aiResponse.userData, ...userData };
-        } else {
-            aiResponse.userData = userData;
+            // Only count steps if not complete
+            const requiredFields = ['name', 'age', 'currentWeight', 'gender', 'primaryGoal', 'activityLevel'];
+            const collectedFields = requiredFields.filter(field => {
+                const data = progress.collectedData;
+                if (field === 'currentWeight') {
+                    return (data.currentWeight !== undefined && data.currentWeight !== null) || 
+                           (data.weight !== undefined && data.weight !== null);
+                }
+                return data[field] !== undefined && data[field] !== null;
+            });
+            
+            progress.step = Math.min(collectedFields.length + 1, progress.maxSteps);
         }
         
         // Ensure weight field consistency for downstream validation
-        if (aiResponse.userData.weight && !aiResponse.userData.currentWeight) {
-            aiResponse.userData.currentWeight = aiResponse.userData.weight;
-            console.log('🔧 Fixed currentWeight field in progress update:', aiResponse.userData.currentWeight);
+        if (progress.collectedData.weight && !progress.collectedData.currentWeight) {
+            progress.collectedData.currentWeight = progress.collectedData.weight;
+            console.log('🔧 Fixed currentWeight field in progress update:', progress.collectedData.currentWeight);
         }
         
-        // Update the progress data to persist between steps
-        progress.collectedData = { ...progress.collectedData, ...userData };
-        console.log('💾 Updated progress.collectedData:', progress.collectedData);
-        
-        console.log('✅ Progress updated - Step:', progress.step, '/', progress.maxSteps);
+        console.log('💾 Updated progress:', {
+            step: progress.step,
+            maxSteps: progress.maxSteps,
+            dataKeys: Object.keys(progress.collectedData)
+        });
     },
     
     saveProfileData: async (profileData) => {
-        console.log('💾 Saving profile from chat:', profileData);
+        console.log('💾 🔍 DETAILED PROFILE SAVE ANALYSIS:');
+        console.log('💾 Raw profile data received:', profileData);
+        console.log('💾 Profile data type:', typeof profileData);
+        console.log('💾 Profile data keys:', Object.keys(profileData || {}));
+        
+        // Validate required fields BEFORE saving
+        const requiredFields = ['userName', 'age', 'currentWeight', 'gender', 'primaryGoal', 'activityLevel'];
+        console.log('💾 Required fields:', requiredFields);
+        
+        const missingFields = [];
+        const presentFields = [];
+        
+        requiredFields.forEach(field => {
+            if (!profileData || profileData[field] === undefined || profileData[field] === null || profileData[field] === '') {
+                missingFields.push(field);
+                console.log(`❌ Missing required field: ${field} (value: ${profileData?.[field]})`);
+            } else {
+                presentFields.push(field);
+                console.log(`✅ Present field: ${field} = ${profileData[field]}`);
+            }
+        });
+        
+        // Check height data
+        const hasHeight = (profileData?.heightFeet && profileData?.heightInches !== undefined) || profileData?.heightCm;
+        console.log('💾 Height check:', {
+            heightFeet: profileData?.heightFeet,
+            heightInches: profileData?.heightInches,
+            heightCm: profileData?.heightCm,
+            hasHeight: hasHeight
+        });
+        
+        if (!hasHeight) {
+            missingFields.push('height');
+        }
+        
+        console.log('💾 Validation summary:', {
+            missingFields: missingFields,
+            presentFields: presentFields,
+            totalRequired: requiredFields.length,
+            totalPresent: presentFields.length
+        });
+        
+        if (missingFields.length > 0) {
+            const errorMsg = `Profile validation failed. Missing required fields: ${missingFields.join(', ')}`;
+            console.error('❌ PROFILE VALIDATION FAILED:', errorMsg);
+            console.error('❌ Complete profile data:', profileData);
+            utils.showNotification(errorMsg, 'error');
+            return false;
+        }
         
         utils.showLoading(true);
         
         try {
+            console.log('💾 Validation passed, proceeding with save...');
+            
             // Add timestamps
             const fullProfileData = {
                 ...profileData,
@@ -1806,35 +1942,80 @@ const onboarding = {
                 updatedAt: new Date()
             };
             
+            console.log('💾 Full profile data to save:', fullProfileData);
+            console.log('💾 Current user check:', {
+                exists: !!appState.currentUser,
+                uid: appState.currentUser?.uid,
+                email: appState.currentUser?.email
+            });
+            console.log('💾 Firebase DB check:', {
+                exists: !!window.firebaseDB,
+                type: typeof window.firebaseDB,
+                saveUserProfile: typeof window.firebaseDB?.saveUserProfile
+            });
+            
+            // Clean up profile data before saving to Firebase (remove undefined values)
+            const cleanProfileData = {};
+            Object.keys(fullProfileData).forEach(key => {
+                const value = fullProfileData[key];
+                if (value !== undefined) {
+                    cleanProfileData[key] = value;
+                } else {
+                    console.log(`🧹 Removed undefined field: ${key}`);
+                }
+            });
+            
+            console.log('💾 Cleaned profile data for Firebase:', cleanProfileData);
+            
             // Save to Firebase
             if (appState.currentUser) {
-                await window.firebaseDB.saveUserProfile(appState.currentUser.uid, fullProfileData);
-                appState.userProfile = fullProfileData;
+                if (!window.firebaseDB) {
+                    throw new Error('Firebase database not available');
+                }
                 
-                console.log('✅ Profile saved successfully, initializing dashboard...');
+                if (typeof window.firebaseDB.saveUserProfile !== 'function') {
+                    throw new Error('Firebase saveUserProfile function not available');
+                }
+                
+                console.log('💾 Calling Firebase saveUserProfile...');
+                await window.firebaseDB.saveUserProfile(appState.currentUser.uid, cleanProfileData);
+                
+                appState.userProfile = fullProfileData;
+                console.log('✅ Profile saved successfully to Firebase!');
+                console.log('✅ App state updated with new profile');
+                
                 utils.showNotification('Welcome to Fitly! Your profile has been saved.', 'success');
                 
                 // Initialize dashboard and switch to main app
+                console.log('💾 Initializing dashboard...');
                 await dashboard.initialize();
                 
                 console.log('✅ Profile save and dashboard initialization complete');
+                return true;
             } else {
                 throw new Error('No authenticated user found');
             }
             
-                } catch (error) {
-            console.error('❌ Error saving profile from chat:', error);
-            console.error('❌ Profile data that failed to save:', fullProfileData);
-            console.error('❌ Current user:', appState.currentUser);
-            console.error('❌ Firebase DB available:', typeof window.firebaseDB);
-            console.error('❌ Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
+        } catch (error) {
+            console.error('❌ DETAILED ERROR ANALYSIS:');
+            console.error('❌ Error type:', error.constructor.name);
+            console.error('❌ Error message:', error.message);
+            console.error('❌ Error stack:', error.stack);
+            console.error('❌ Profile data that failed to save:', profileData);
+            console.error('❌ Current user details:', {
+                exists: !!appState.currentUser,
+                uid: appState.currentUser?.uid,
+                email: appState.currentUser?.email,
+                displayName: appState.currentUser?.displayName
+            });
+            console.error('❌ Firebase availability:', {
+                firebaseDB: !!window.firebaseDB,
+                saveUserProfile: typeof window.firebaseDB?.saveUserProfile,
+                dbMethods: window.firebaseDB ? Object.keys(window.firebaseDB) : 'N/A'
             });
             
             // More specific error message
-            let errorMsg = 'Failed to save profile.';
+            let errorMsg = 'Failed to save profile: ' + error.message;
             if (error.message.includes('Firebase')) {
                 errorMsg = 'Firebase connection error. Please check your internet connection.';
             } else if (error.message.includes('auth')) {
@@ -1845,7 +2026,8 @@ const onboarding = {
                 errorMsg = 'Database not available. Please refresh the page.';
             }
             
-            utils.showNotification(`${errorMsg} You can try the form instead.`, 'error');
+            utils.showNotification(`${errorMsg}`, 'error');
+            return false;
         } finally {
             utils.showLoading(false);
         }
@@ -2060,6 +2242,9 @@ const onboarding = {
 
 // Dashboard functions
 const dashboard = {
+    initialized: false, // Flag to prevent duplicate initialization
+    listenersSetup: false, // Flag to prevent duplicate event listeners
+    
     initialize: async () => {
         console.log('📊 Initializing dashboard...');
         console.log('📊 User profile available:', !!appState.userProfile);
@@ -2070,6 +2255,16 @@ const dashboard = {
         if (!appState.userProfile) {
             console.error('❌ No user profile available for dashboard initialization');
             console.log('🔍 AppState contents:', appState);
+            return;
+        }
+        
+        // Prevent duplicate initialization
+        if (dashboard.initialized) {
+            console.log('⚠️ Dashboard already initialized, skipping...');
+            // Still refresh data and switch to dashboard
+            await dashboard.loadTodaysData();
+            dashboard.renderMealsList();
+            utils.switchScreen('dashboard');
             return;
         }
         
@@ -2101,6 +2296,10 @@ const dashboard = {
             
             console.log('✅ Dashboard initialization complete - should now be visible');
             console.log('🔍 Final app state:', appState);
+            
+            // Mark as initialized
+            dashboard.initialized = true;
+            
         } catch (error) {
             console.error('❌ Error during dashboard initialization:', error);
             console.error('❌ Dashboard init error stack:', error.stack);
@@ -2299,6 +2498,12 @@ const dashboard = {
     setupEventListeners: () => {
         console.log('👂 Setting up dashboard event listeners...');
         
+        // Prevent duplicate event listeners
+        if (dashboard.listenersSetup) {
+            console.log('⚠️ Dashboard event listeners already set up, skipping...');
+            return;
+        }
+        
         // Activity checkboxes
         if (elements.workedOutToday) {
             elements.workedOutToday.addEventListener('change', () => {
@@ -2365,10 +2570,16 @@ const dashboard = {
         }
         
         if (elements.mealForm) {
-            elements.mealForm.addEventListener('submit', (e) => {
+            // Remove existing event listeners to prevent duplicates
+            elements.mealForm.removeEventListener('submit', meals.mealFormHandler);
+            
+            // Store the handler so we can remove it later
+            meals.mealFormHandler = (e) => {
                 console.log('📝 Meal form submitted');
                 meals.handleMealSubmit(e);
-            });
+            };
+            
+            elements.mealForm.addEventListener('submit', meals.mealFormHandler);
             console.log('✅ Meal form submit listener added');
         } else {
             console.log('⚠️ Meal form element not found');
@@ -2390,6 +2601,9 @@ const dashboard = {
         // Note: Profile modal event listeners are set up globally in setupGlobalEventListeners
         
         // Note: Profile modal keyboard shortcuts, tab switching, and form submissions are set up globally in setupGlobalEventListeners
+        
+        // Mark listeners as set up
+        dashboard.listenersSetup = true;
         
         console.log('✅ Event listeners set up');
     },
@@ -3860,6 +4074,8 @@ const aiAssistant = {
         // Update local state
         appState.todaysMeals.push(mealLog);
         dashboard.calculateDailyNutrition();
+        dashboard.updateNutritionDisplay();
+        dashboard.renderMealsList();
         
         // Add to recent logs
         aiAssistant.addRecentLog(`🍽️ ${mealData.description}`);
@@ -4079,9 +4295,9 @@ const aiAssistant = {
                 
                 const mealData = {
                     description: detectedMeal,
+                    date: new Date(), // Fix: Use 'date' instead of 'timestamp'
                     nutrition: estimatedNutrition,
                     source: 'ai_auto_detect',
-                    timestamp: new Date().toISOString(),
                     confidence: 'medium'
                 };
                 
